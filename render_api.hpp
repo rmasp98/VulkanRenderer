@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include "device.hpp"
 #include "pipeline.hpp"
 #include "vulkan/vulkan.hpp"
@@ -22,20 +24,25 @@ class RenderApi {
 
   void SetDevice(DeviceDetails const& deviceDetails) {
     device_ = deviceDetails.CreateDevice(surface_, extent_);
-    // TODO: might need to recreate pipeline
+    for (auto& pipeline : pipelines_) {
+      pipeline.second.Register(device_, extent_);
+    }
   }
 
   uint32_t RegisterPipeline(PipelineSettings const& settings) {
-    auto pipeline = Pipeline(settings);
-    pipeline.Register(device_, extent_);
-    pipelines_.emplace(0, std::move(pipeline));
-    return 0;
+    Pipeline pipeline{settings};
+    if (device_) {
+      pipeline.Register(device_, extent_);
+    }
+
+    static std::atomic<uint32_t> pipelineTracker{0};
+    auto pipelineId = pipelineTracker++;
+    pipelines_.emplace(pipelineId, std::move(pipeline));
+    return pipelineId;
   }
 
-  //
   uint32_t RegisterCommand(uint32_t pipelineId, Command&& command) {
     assert(pipelines_.count(pipelineId));
-    command.Allocate(device_, pipelines_.at(pipelineId).NumBuffers());
     return pipelines_.at(pipelineId)
         .RegisterCommand(device_, std::forward<Command>(command), extent_);
   }
@@ -61,7 +68,7 @@ class RenderApi {
     WaitIdle();
     device_->RecreateSwapchain(surface_, extent_);
     for (auto& pipeline : pipelines_) {
-      pipeline.second.Register(device_, extent_);
+      pipeline.second.CreateFramebuffers(device_, extent_);
     }
   }
 };

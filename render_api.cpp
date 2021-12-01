@@ -7,20 +7,21 @@
 
 RenderApi::RenderApi(Window& window, std::vector<char const*> layers,
                      std::vector<char const*> extensions,
-                     DeviceFeatures const requiredFeatures)
-    : instance_(CreateRenderInstance(window, layers, extensions)),
-      surface_(window.GetVulkanSurface(instance_)),
-      extent_(GetExtent(window)),
-      device_(
-          GetPrimaryDevice(instance_, surface_, extent_, requiredFeatures)) {
-  if (layers.empty()) {
-    debugUtilsMessenger_ = CreateDebugUtilsMessenger(instance_);
-  }
+                     DeviceFeatures const /*requiredFeatures*/)
+    : instance_(CreateRenderInstance(window, layers, extensions))
+// surface_(window.GetVulkanSurface(instance_))
+// extent_(GetExtent(window)),
+// device_(
+//     GetPrimaryDevice(instance_, surface_, extent_, requiredFeatures))
+{
+  // if (layers.empty()) {
+  //   debugUtilsMessenger_ = CreateDebugUtilsMessenger(instance_);
+  // }
 
-  window.BindResizeCallback([&](uint32_t width, uint32_t height) {
-    extent_ = vk::Extent2D(width, height);
-    RecreateSwapchain();
-  });
+  // window.BindResizeCallback([&](uint32_t width, uint32_t height) {
+  //   extent_ = vk::Extent2D(width, height);
+  //   RecreateSwapchain();
+  // });
 }
 
 vk::UniqueInstance CreateRenderInstance(Window const& window,

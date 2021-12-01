@@ -34,6 +34,8 @@ void Device::RecreateSwapchain(vk::UniqueSurfaceKHR const& surface,
                                vk::Extent2D& extent) {
   swapchain_ = CreateSwapchain(surface, extent, swapchain_);
   numSwapchainImages_ = device_->getSwapchainImagesKHR(swapchain_.get()).size();
+  descriptorPool_ = CreateDescriptorPool();
+  semaphores_ = Semaphores(device_, numSwapchainImages_);
 }
 
 vk::UniquePipelineLayout Device::CreatePipelineLayout(
@@ -102,6 +104,14 @@ Device::CreateShaderModules(
   return shaderModules;
 }
 
+vk::UniqueShaderModule Device::CreateShaderModule(
+    std::vector<char> const& shaderFile) const {
+  return device_->createShaderModuleUnique(
+      {{},
+       shaderFile.size(),
+       reinterpret_cast<const uint32_t*>(shaderFile.data())});
+}
+
 uint32_t Device::GetNextImage() {
   auto renderCompleteWaitResult = device_->waitForFences(
       semaphores_.GetRenderCompleteFence(), true, UINT64_MAX);
@@ -152,7 +162,7 @@ std::vector<vk::UniqueDescriptorSet> Device::AllocateDescriptorSet(
 
 void Device::TransferBuffer(vk::UniqueBuffer const& sourceBuffer,
                             vk::UniqueBuffer const& destBuffer,
-                            uint32_t const size) {
+                            uint32_t const size) const {
   // transfer to memory
   auto cmdBuffer = AllocateCommandBuffer(vk::CommandBufferLevel::ePrimary, 1);
   cmdBuffer[0]->begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
@@ -177,7 +187,7 @@ std::unique_ptr<BufferRef> Device::UploadBuffer(
 }
 
 void Device::UploadBuffer(std::unique_ptr<BufferRef>& buffer,
-                          void const* data) {
+                          void const* data) const {
   buffer->Upload(
       device_, data,
       [&](vk::UniqueBuffer const& srcBuffer, vk::UniqueBuffer const& dstBuffer,

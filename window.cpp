@@ -1,6 +1,8 @@
 
 #include "window.hpp"
 
+#include <iostream>
+
 static void framebufferResizeCallback(GLFWwindow* window, int width,
                                       int height) {
   auto win = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
@@ -34,8 +36,8 @@ std::vector<char const*> Window::GetVulkanExtensions() const {
 vk::UniqueSurfaceKHR Window::GetVulkanSurface(
     vk::UniqueInstance const& instance) const {
   VkSurfaceKHR surface;
-  if (glfwCreateWindowSurface(VkInstance(instance.get()), window_, nullptr,
-                              &surface) != VK_SUCCESS) {
+  if (glfwCreateWindowSurface(instance.get(), window_, nullptr, &surface) !=
+      VK_SUCCESS) {
     throw std::runtime_error("failed to create window surface!");
   }
   vk::ObjectDestroy<vk::Instance, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE> deleter(

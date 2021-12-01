@@ -4,8 +4,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "vulcan_defaults.hpp"
 #include "vulkan/vulkan.hpp"
+#include "vulkan_defaults.hpp"
 
 class Framebuffer {
  public:
@@ -141,3 +141,4 @@ std::vector<vk::PipelineShaderStageCreateInfo> CreateShaderStages(
         files);
 
 std::vector<char> LoadShader(char const* filename);
+std::vector<uint32_t> LoadShader2(char const* filename);

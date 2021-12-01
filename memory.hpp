@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <iostream>
+#include <map>
 #include <unordered_map>
 
 #include "vulkan/vulkan.hpp"
@@ -77,6 +78,6 @@ class MemoryAllocator {
 
  private:
   vk::PhysicalDeviceMemoryProperties const memoryProperties_;
-  std::unordered_map<uint32_t, MemoryMetaData> allocations_;
+  std::map<uint32_t, MemoryMetaData> allocations_;
   std::atomic<uint32_t> currentId_;
 };

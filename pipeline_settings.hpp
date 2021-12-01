@@ -1,61 +1,64 @@
 #pragma once
 
+#include <set>
 #include <unordered_map>
 
-#include "vulcan_defaults.hpp"
+#include "shader.hpp"
 #include "vulkan/vulkan.hpp"
+#include "vulkan_defaults.hpp"
 
-struct PipelineSettings {
-  PipelineSettings(std::unordered_map<vk::ShaderStageFlagBits,
-                                      std::vector<char>> const& shaderFiles)
-      : ShaderFiles(shaderFiles) {}
+struct VulkanPipelineSettings {
+  vk::PipelineVertexInputStateCreateInfo VertexInput;
+  vk::PipelineInputAssemblyStateCreateInfo InputAssembly;
+  vk::PipelineViewportStateCreateInfo ViewportState;
+  vk::PipelineRasterizationStateCreateInfo Rasterizer;
+  vk::PipelineMultisampleStateCreateInfo Multisampling;
+  vk::PipelineDepthStencilStateCreateInfo DepthStencil;
+  vk::PipelineColorBlendAttachmentState ColourBlendAttachment;
+  vk::PipelineColorBlendStateCreateInfo ColourBlending;
+  std::array<vk::DynamicState, 2> DynamicStates;
+  vk::PipelineDynamicStateCreateInfo DynamicState;
+  // Layout
+  vk::PipelineLayoutCreateInfo LayoutSettings;
+  // RenderPass
+  vk::AttachmentDescription ColourAttachment;
+  vk::SubpassDescription Subpass;
+  vk::SubpassDependency Dependency;
+  vk::AttachmentReference ColourAttachmentRef;
+  std::unordered_map<vk::ShaderStageFlagBits, ShaderDetails> Shaders;
+};
+
+class PipelineSettings {
+ public:
+  PipelineSettings(
+      std::unordered_map<vk::ShaderStageFlagBits, ShaderDetails> const& shaders)
+      : shaders_(shaders) {
+    // TODO: assert that at least vertex and fragment shader are here?
+  }
 
   ~PipelineSettings() = default;
 
-  // TODO: create setter functions for pipeline functionality
+  VulkanPipelineSettings GetVulkanSettings() {
+    return {
+        defaults::pipeline::VertexInput,
+        defaults::pipeline::InputAssembly,
+        defaults::pipeline::ViewportState,
+        defaults::pipeline::Rasterizer,
+        defaults::pipeline::Multisampling,
+        defaults::pipeline::DepthStencil,
+        defaults::pipeline::ColourBlendAttachment,
+        defaults::pipeline::ColourBlending,
+        defaults::pipeline::DynamicStates,
+        defaults::pipeline::DynamicState,
+        defaults::pipeline::LayoutCreateInfo,
+        defaults::pipeline::ColourAttachment,
+        defaults::pipeline::Subpass,
+        defaults::pipeline::Dependency,
+        defaults::pipeline::ColourAttachmentRef,
+        shaders_,
+    };
+  }
 
-  vk::PipelineVertexInputStateCreateInfo VertexInput =
-      defaults::pipeline::VertexInput;
-
-  vk::PipelineInputAssemblyStateCreateInfo InputAssembly =
-      defaults::pipeline::InputAssembly;
-
-  vk::PipelineViewportStateCreateInfo ViewportState =
-      defaults::pipeline::ViewportState;
-
-  vk::PipelineRasterizationStateCreateInfo Rasterizer =
-      defaults::pipeline::Rasterizer;
-
-  vk::PipelineMultisampleStateCreateInfo Multisampling_ =
-      defaults::pipeline::Multisampling;
-
-  vk::PipelineDepthStencilStateCreateInfo DepthStencil =
-      defaults::pipeline::DepthStencil;
-
-  vk::PipelineColorBlendAttachmentState ColourBlendAttachment =
-      defaults::pipeline::ColourBlendAttachment;
-
-  vk::PipelineColorBlendStateCreateInfo ColourBlending =
-      defaults::pipeline::ColourBlending;
-
-  std::array<vk::DynamicState, 2> DynamicStates =
-      defaults::pipeline::DynamicStates;
-
-  vk::PipelineDynamicStateCreateInfo DynamicState =
-      defaults::pipeline::DynamicState;
-
-  // Layout
-  vk::PipelineLayoutCreateInfo LayoutSettings =
-      defaults::pipeline::LayoutCreateInfo;
-
-  // RenderPass
-  vk::AttachmentDescription ColourAttachment =
-      defaults::pipeline::ColourAttachment;
-  vk::SubpassDescription Subpass = defaults::pipeline::Subpass;
-  vk::SubpassDependency Dependency = defaults::pipeline::Dependency;
-
-  vk::AttachmentReference ColourAttachmentRef =
-      defaults::pipeline::ColourAttachmentRef;
-
-  std::unordered_map<vk::ShaderStageFlagBits, std::vector<char>> ShaderFiles;
+ private:
+  std::unordered_map<vk::ShaderStageFlagBits, ShaderDetails> shaders_;
 };

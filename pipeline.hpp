@@ -2,17 +2,17 @@
 
 #include <memory>
 
-#include "buffer.hpp"
 #include "command.hpp"
 #include "pipeline_settings.hpp"
 #include "queues.hpp"
 #include "utils.hpp"
+#include "vertex_buffer.hpp"
 #include "vulkan/vulkan.hpp"
 
 class Pipeline {
  public:
-  Pipeline(PipelineSettings const&);
-  ~Pipeline() { RemoveDescriptorLayouts(); };
+  Pipeline(PipelineSettings const& settings) : settings_(settings) {}
+  ~Pipeline() = default;
 
   Pipeline(Pipeline const& other) = delete;
   Pipeline& operator=(Pipeline const& other) = delete;
@@ -21,12 +21,17 @@ class Pipeline {
 
   void Register(std::shared_ptr<Device>&, vk::Extent2D const&);
 
+  void CreateFramebuffers(std::shared_ptr<Device>&, vk::Extent2D const&);
+
   uint32_t NumBuffers() const { return framebuffers_.size(); }
 
   // TODO: needs to check if command already exists?
   uint32_t RegisterCommand(std::shared_ptr<Device>& device, Command&& command,
                            vk::Extent2D const& extent) {
-    command.Record(device, pipeline_, renderPass_, framebuffers_, extent);
+    auto descriptorSetLayouts = GetDescriptorSetLayouts();
+    command.Allocate(device, NumBuffers());
+    command.Record(device, pipeline_, renderPass_, framebuffers_,
+                   descriptorSetLayouts, extent);
     commands_.emplace(0, std::move(command));
     return 0;
   }
@@ -39,6 +44,7 @@ class Pipeline {
 
  private:
   PipelineSettings settings_;
+  std::vector<Shader> shaders_;
   vk::UniquePipelineLayout layout_;
   // TODO: RenderPass may be independent of pipeline
   vk::UniqueRenderPass renderPass_;
@@ -46,6 +52,16 @@ class Pipeline {
   vk::UniquePipeline pipeline_;
   std::vector<Framebuffer> framebuffers_;
   std::unordered_map<uint32_t, Command> commands_;
+
+  std::unordered_map<vk::ShaderStageFlagBits, vk::DescriptorSetLayout>
+  GetDescriptorSetLayouts() {
+    std::unordered_map<vk::ShaderStageFlagBits, vk::DescriptorSetLayout>
+        descriptorSetLayouts;
+    for (auto& shader : shaders_) {
+      descriptorSetLayouts.insert({shader.GetType(), shader.GetLayout()});
+    }
+    return descriptorSetLayouts;
+  }
 };
 
 std::vector<vk::PipelineShaderStageCreateInfo> CreateShaderStages(

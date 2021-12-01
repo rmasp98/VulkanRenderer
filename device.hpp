@@ -6,8 +6,8 @@
 #include "memory.hpp"
 #include "queues.hpp"
 #include "utils.hpp"
-#include "vulcan_defaults.hpp"
 #include "vulkan/vulkan.hpp"
+#include "vulkan_defaults.hpp"
 
 using TransferFunction = std::function<void(vk::UniqueBuffer const&,
                                             vk::UniqueBuffer const&, uint32_t)>;
@@ -69,8 +69,7 @@ class BufferRef {
   }
 
   void BindIndex(vk::UniqueCommandBuffer const& cmdBuffer) {
-    cmdBuffer->bindIndexBuffer(buffer_.get(), {offset_},
-                               vk::IndexType::eUint16);
+    cmdBuffer->bindIndexBuffer(buffer_.get(), offset_, vk::IndexType::eUint16);
   }
 
  private:
@@ -139,6 +138,8 @@ class Device {
   CreateShaderModules(
       std::unordered_map<vk::ShaderStageFlagBits, std::vector<char>> const&
           shaderFiles) const;
+  vk::UniqueShaderModule CreateShaderModule(
+      std::vector<char> const& shaderFile) const;
 
   uint32_t GetNextImage();
 
@@ -154,7 +155,7 @@ class Device {
   std::unique_ptr<BufferRef> UploadBuffer(
       void const* data, uint32_t const size,
       vk::BufferUsageFlags const bufferUsage, bool const optimise = false);
-  void UploadBuffer(std::unique_ptr<BufferRef>&, void const* data);
+  void UploadBuffer(std::unique_ptr<BufferRef>&, void const* data) const;
 
   void WaitIdle() { device_->waitIdle(); }
 
@@ -179,7 +180,7 @@ class Device {
       vk::MemoryPropertyFlags const flags) const;
 
   void TransferBuffer(vk::UniqueBuffer const& sourceBuffer,
-                      vk::UniqueBuffer const& destBuffer, uint32_t size);
+                      vk::UniqueBuffer const& destBuffer, uint32_t size) const;
 
   vk::UniqueDescriptorPool CreateDescriptorPool() {
     auto descriptorSizes = vk::DescriptorPoolSize(

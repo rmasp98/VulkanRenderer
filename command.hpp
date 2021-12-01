@@ -5,9 +5,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "buffer.hpp"
 #include "device.hpp"
 #include "utils.hpp"
+#include "vertex_buffer.hpp"
 #include "vulkan/vulkan.hpp"
 
 class Command {
@@ -30,7 +30,9 @@ class Command {
 
   void Record(std::shared_ptr<Device>& device, vk::UniquePipeline const&,
               vk::UniqueRenderPass const&, std::vector<Framebuffer> const&,
-              vk::Extent2D const&);
+              std::unordered_map<vk::ShaderStageFlagBits,
+                                 vk::DescriptorSetLayout> const&,
+              vk::Extent2D const&) const;
 
   void Draw(uint32_t const imageIndex, std::shared_ptr<Device> const& device) {
     device->SubmitToGraphics(cmdBuffers_[imageIndex]);

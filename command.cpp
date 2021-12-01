@@ -11,11 +11,13 @@ void Command::Allocate(std::shared_ptr<Device> const& device,
                                               numFramebuffers);
 }
 
-void Command::Record(std::shared_ptr<Device>& device,
-                     vk::UniquePipeline const& pipeline,
-                     vk::UniqueRenderPass const& renderPass,
-                     std::vector<Framebuffer> const& framebuffers,
-                     vk::Extent2D const& extent) {
+void Command::Record(
+    std::shared_ptr<Device>& device, vk::UniquePipeline const& pipeline,
+    vk::UniqueRenderPass const& renderPass,
+    std::vector<Framebuffer> const& framebuffers,
+    std::unordered_map<vk::ShaderStageFlagBits, vk::DescriptorSetLayout> const&
+        descriptorSetLayouts,
+    vk::Extent2D const& extent) const {
   assert(cmdBuffers_.size() == framebuffers.size());
   for (uint32_t i = 0; i < cmdBuffers_.size(); ++i) {
     auto& cmdBuffer = cmdBuffers_[i];
@@ -39,7 +41,7 @@ void Command::Record(std::shared_ptr<Device>& device,
 
     for (auto& vertBuffer : vertBuffers_) {
       if (!vertBuffer->IsUploaded()) {
-        vertBuffer->Upload(device);
+        vertBuffer->Upload(device, descriptorSetLayouts);
       }
       vertBuffer->Record(cmdBuffer);
     }
