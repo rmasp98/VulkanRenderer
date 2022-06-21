@@ -5,6 +5,7 @@
 #include <map>
 #include <unordered_map>
 
+#include "device_api.hpp"
 #include "vulkan/vulkan.hpp"
 
 struct MemoryMetaData {
@@ -21,11 +22,10 @@ class MemoryAllocator {
   MemoryAllocator(vk::PhysicalDeviceMemoryProperties const& memoryProperties)
       : memoryProperties_(memoryProperties) {}
 
-  uint32_t Allocate(vk::UniqueDevice const& device,
-                    vk::UniqueBuffer const& buffer,
+  uint32_t Allocate(DeviceApi const& device, vk::UniqueBuffer const& buffer,
                     vk::MemoryPropertyFlags const flags) {
     uint32_t typeIndex = uint32_t(~0);
-    auto memoryRequirements = device->getBufferMemoryRequirements(buffer.get());
+    auto memoryRequirements = device.GetBufferMemoryRequirements(buffer);
     auto typeBits = memoryRequirements.memoryTypeBits;
 
     for (uint32_t i = 0; i < memoryProperties_.memoryTypeCount; i++) {
@@ -38,11 +38,10 @@ class MemoryAllocator {
     }
     assert(typeIndex != uint32_t(~0));
 
-    auto memory =
-        device->allocateMemoryUnique({memoryRequirements.size, typeIndex});
+    auto memory = device.AllocateMemory(memoryRequirements.size, typeIndex);
 
     // TODO: add offset to this
-    device->bindBufferMemory(buffer.get(), memory.get(), 0);
+    device.BindBufferMemory(buffer, memory, 0);
 
     auto id = currentId_++;
 
@@ -58,16 +57,16 @@ class MemoryAllocator {
   // TODO: probably should make this thread safe
   void Deallocate(uint32_t id) { allocations_.erase(id); }
 
-  void* MapMemory(vk::UniqueDevice const& device, uint32_t id) {
+  void* MapMemory(DeviceApi const& device, uint32_t id) {
     // TODO: assert id exists
     auto& mmd = allocations_[id];
-    return device->mapMemory(mmd.Memory.get(), mmd.Offset, mmd.Size);
+    return device.MapMemory(mmd.Memory, mmd.Offset, mmd.Size);
   }
 
-  void UnMapMemory(vk::UniqueDevice const& device, uint32_t id) {
+  void UnMapMemory(DeviceApi const& device, uint32_t id) {
     // TODO: assert id exists
     auto& mmd = allocations_[id];
-    device->unmapMemory(mmd.Memory.get());
+    device.UnmapMemory(mmd.Memory);
   }
 
   uint64_t GetOffset(uint32_t id) {

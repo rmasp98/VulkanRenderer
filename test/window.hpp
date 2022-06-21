@@ -17,13 +17,13 @@ class Window {
     glfwPollEvents();
     glfwSwapBuffers(window_);
   }
-  std::vector<char const*> GetVulkanExtensions() const;
-  vk::UniqueSurfaceKHR GetVulkanSurface(vk::UniqueInstance const&) const;
+  std::vector<char const *> GetVulkanExtensions() const;
+  vk::UniqueSurfaceKHR GetVulkanSurface(vk::UniqueInstance const &) const;
 
   std::pair<uint32_t, uint32_t> Size() const { return {width_, height_}; }
 
   void BindResizeCallback(
-      std::function<void(uint32_t, uint32_t)> const& callback) {
+      std::function<void(uint32_t, uint32_t)> const &callback) {
     resizeCallback_ = callback;
   }
 
@@ -34,7 +34,7 @@ class Window {
   }
 
  protected:
-  GLFWwindow* window_;
+  GLFWwindow *window_;
   uint32_t width_;
   uint32_t height_;
   std::function<void(int, int)> resizeCallback_;
