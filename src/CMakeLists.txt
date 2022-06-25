@@ -12,7 +12,7 @@ set_target_properties(VulkanRenderer
 
 target_compile_options(VulkanRenderer PRIVATE -Wall -Wextra -Werror)
 
-target_link_libraries(VulkanRenderer Vulkan-Headers glfw)
+target_link_libraries(VulkanRenderer Vulkan-Headers spirv-reflect-static glfw)
 
 target_include_directories(VulkanRenderer
     PUBLIC

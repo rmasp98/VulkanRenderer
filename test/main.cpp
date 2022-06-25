@@ -14,7 +14,9 @@ int main() {
 
   std::unordered_map<vk::ShaderStageFlagBits, ShaderDetails> shaders{
       {vk::ShaderStageFlagBits::eVertex,
-       {LoadShader("../../shaders/vert.spv"), {}}},
+       {LoadShader("../../shaders/vert.spv"),
+        {{0, vk::DescriptorType::eUniformBuffer, 1,
+          vk::ShaderStageFlagBits::eVertex, nullptr}}}},
       {vk::ShaderStageFlagBits::eFragment,
        {LoadShader("../../shaders/frag.spv"), {}}}};
 
@@ -28,6 +30,11 @@ int main() {
                                          {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
                                          {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}}));
 
+  auto uniformData = std::make_shared<UniformDataImpl<MVP>>(
+      MVP{2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1});
+
+  buffer->SetUniformData(vk::ShaderStageFlagBits::eVertex, uniformData);
+
   std::unique_ptr<Buffer> buffer2 =
       std::make_unique<IndexBuffer<ColouredVertex2D>>(
           std::vector<ColouredVertex2D>({{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
@@ -36,12 +43,13 @@ int main() {
                                          {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}}),
           std::vector<uint16_t>({0, 1, 2, 2, 3, 0}));
 
+  buffer2->SetUniformData(vk::ShaderStageFlagBits::eVertex, uniformData);
+
   Command command;
   // // TODO: need to add some kind of priority
   command.AddVertexBuffer(std::move(buffer2));
   command.AddVertexBuffer(std::move(buffer));
   auto commandId = pipeline->AddCommand(std::move(command));
-  (void)commandId;
 
   while (!window.ShouldClose()) {
     window.Update();

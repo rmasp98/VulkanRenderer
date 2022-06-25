@@ -18,19 +18,19 @@ class Command {
 
   // TODO: Give ability to set a relative viewport and scissor
 
-  void Allocate(DeviceApi const& device, uint32_t const numFramebuffers,
-                vk::UniqueCommandPool const& commandPool) {
+  void Allocate(DeviceApi const& device, uint32_t const numFramebuffers) {
     cmdBuffers_ = device.AllocateCommandBuffer(vk::CommandBufferLevel::ePrimary,
-                                               numFramebuffers, commandPool);
+                                               numFramebuffers);
   }
 
-  void Record(DeviceApi& device, vk::UniquePipeline const& pipeline,
-              vk::UniqueRenderPass const& renderPass,
-              std::vector<Framebuffer> const& framebuffers,
-              std::unordered_map<vk::ShaderStageFlagBits,
-                                 vk::DescriptorSetLayout> const&,
-              vk::Extent2D const& extent,
-              std::shared_ptr<MemoryAllocator>& allocator) {
+  void Record(
+      DeviceApi& device, vk::UniquePipeline const& pipeline,
+      vk::UniqueRenderPass const& renderPass,
+      std::vector<Framebuffer> const& framebuffers,
+      std::unordered_map<vk::ShaderStageFlagBits,
+                         std::shared_ptr<UniformBuffer>>& uniformBuffers,
+      vk::Extent2D const& extent,
+      vk::UniquePipelineLayout const& pipelineLayout) {
     assert(cmdBuffers_.size() == framebuffers.size());
     for (uint32_t i = 0; i < cmdBuffers_.size(); ++i) {
       auto& cmdBuffer = cmdBuffers_[i];
@@ -53,11 +53,16 @@ class Command {
                           static_cast<float>(extent.height), 0.0f, 1.0f));
       cmdBuffer->setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
 
+      for (auto& uniformBuffer : uniformBuffers) {
+        uniformBuffer.second->Bind(0, cmdBuffer, pipelineLayout);
+      }
+
       for (auto& vertBuffer : vertBuffers_) {
         if (!vertBuffer->IsUploaded()) {
-          vertBuffer->Upload(device, allocator);
+          vertBuffer->Upload(device);
         }
-        vertBuffer->Record(cmdBuffer);
+        vertBuffer->UpdateUniformBuffer(uniformBuffers, 0, device);
+        vertBuffer->Record(cmdBuffer, pipelineLayout);
       }
 
       cmdBuffer->endRenderPass();

@@ -5,8 +5,9 @@
 #include <map>
 #include <unordered_map>
 
-#include "device_api.hpp"
 #include "vulkan/vulkan.hpp"
+
+using AllocationId = uint32_t;
 
 struct MemoryMetaData {
   vk::UniqueDeviceMemory Memory;
@@ -19,18 +20,19 @@ struct MemoryMetaData {
 class MemoryAllocator {
  public:
   // TODO: this should take device to create memory
-  MemoryAllocator(vk::PhysicalDeviceMemoryProperties const& memoryProperties)
-      : memoryProperties_(memoryProperties) {}
+  MemoryAllocator() = default;
 
-  uint32_t Allocate(DeviceApi const& device, vk::UniqueBuffer const& buffer,
-                    vk::MemoryPropertyFlags const flags) {
+  AllocationId Allocate(
+      vk::UniqueBuffer const& buffer, vk::MemoryPropertyFlags const flags,
+      vk::PhysicalDeviceMemoryProperties const& memoryProperties,
+      vk::UniqueDevice const& device) {
     uint32_t typeIndex = uint32_t(~0);
-    auto memoryRequirements = device.GetBufferMemoryRequirements(buffer);
+    auto memoryRequirements = device->getBufferMemoryRequirements(buffer.get());
     auto typeBits = memoryRequirements.memoryTypeBits;
 
-    for (uint32_t i = 0; i < memoryProperties_.memoryTypeCount; i++) {
+    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
       if ((typeBits & 1) &&
-          ((memoryProperties_.memoryTypes[i].propertyFlags & flags) == flags)) {
+          ((memoryProperties.memoryTypes[i].propertyFlags & flags) == flags)) {
         typeIndex = i;
         break;
       }
@@ -38,10 +40,11 @@ class MemoryAllocator {
     }
     assert(typeIndex != uint32_t(~0));
 
-    auto memory = device.AllocateMemory(memoryRequirements.size, typeIndex);
+    auto memory =
+        device->allocateMemoryUnique({memoryRequirements.size, typeIndex});
 
     // TODO: add offset to this
-    device.BindBufferMemory(buffer, memory, 0);
+    device->bindBufferMemory(buffer.get(), memory.get(), 0);
 
     auto id = currentId_++;
 
@@ -55,28 +58,29 @@ class MemoryAllocator {
   }
 
   // TODO: probably should make this thread safe
-  void Deallocate(uint32_t id) { allocations_.erase(id); }
+  void Deallocate(AllocationId const id) { allocations_.erase(id); }
 
-  void* MapMemory(DeviceApi const& device, uint32_t id) {
+  void* MapMemory(AllocationId const id, vk::UniqueDevice const& device) const {
     // TODO: assert id exists
-    auto& mmd = allocations_[id];
-    return device.MapMemory(mmd.Memory, mmd.Offset, mmd.Size);
+    auto& mmd = allocations_.at(id);
+    return device->mapMemory(mmd.Memory.get(), mmd.Offset, mmd.Size);
   }
 
-  void UnMapMemory(DeviceApi const& device, uint32_t id) {
+  void UnmapMemory(AllocationId const id,
+                   vk::UniqueDevice const& device) const {
     // TODO: assert id exists
-    auto& mmd = allocations_[id];
-    device.UnmapMemory(mmd.Memory);
+    auto& mmd = allocations_.at(id);
+    device->unmapMemory(mmd.Memory.get());
   }
 
-  uint64_t GetOffset(uint32_t id) {
-    auto& mmd = allocations_[id];
+  uint64_t GetOffset(AllocationId const id) const {
+    auto& mmd = allocations_.at(id);
     // Get offset from table
     return mmd.Offset;
   }
 
  private:
   vk::PhysicalDeviceMemoryProperties const memoryProperties_;
-  std::map<uint32_t, MemoryMetaData> allocations_;
+  std::map<AllocationId, MemoryMetaData> allocations_;
   std::atomic<uint32_t> currentId_;
 };

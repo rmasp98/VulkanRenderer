@@ -3,40 +3,19 @@
 
 #include <limits>
 
-vk::UniqueSwapchainKHR DeviceApi::CreateSwapchain(
-    vk::UniqueSurfaceKHR const& surface, vk::Extent2D& extent,
-    std::vector<uint32_t> const& queueFamilyIndices,
-    bool const uniqueQueueFamilies,
-    vk::UniqueSwapchainKHR const& oldSwapchain) const {
-  auto capabilities = physicalDevice_.getSurfaceCapabilitiesKHR(surface.get());
-  extent = SetExtent(extent, capabilities);
-  auto surfaceFormat = SelectSurfaceFormat(physicalDevice_, surface);
-  vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eColorAttachment |
-                              vk::ImageUsageFlagBits::eTransferSrc;
-
-  vk::SwapchainCreateInfoKHR swapChainCreateInfo(
-      {}, surface.get(), SelectImageCount(capabilities), surfaceFormat.format,
-      surfaceFormat.colorSpace, extent, 1, usage, vk::SharingMode::eExclusive,
-      {}, SelectPreTransform(capabilities), SelectCompositeAlpha(capabilities),
-      SelectPresentMode(physicalDevice_, surface), true, oldSwapchain.get());
-
-  if (!uniqueQueueFamilies) {
-    swapChainCreateInfo.imageSharingMode = vk::SharingMode::eConcurrent;
-    swapChainCreateInfo.setQueueFamilyIndices(queueFamilyIndices);
-  }
-
-  return device_->createSwapchainKHRUnique(swapChainCreateInfo);
+void DeviceApi::RecreateSwapchain(vk::UniqueSurfaceKHR const& surface,
+                                  vk::Extent2D& extent,
+                                  QueueFamilies const& queueFamilies) {
+  swapchain_ = CreateSwapchain(surface, extent, queueFamilies, swapchain_);
 }
 
-uint32_t DeviceApi::GetNumSwapchainImages(
-    vk::UniqueSwapchainKHR const& swapchain) const {
-  return device_->getSwapchainImagesKHR(swapchain.get()).size();
+uint32_t DeviceApi::GetNumSwapchainImages() const {
+  return device_->getSwapchainImagesKHR(swapchain_.get()).size();
 }
 
-uint32_t DeviceApi::GetNextImageIndex(vk::UniqueSwapchainKHR const& swapchain,
-                                      vk::Semaphore const& semaphore) {
+uint32_t DeviceApi::GetNextImageIndex(vk::Semaphore const& semaphore) {
   uint32_t imageIndex;
-  auto result = device_->acquireNextImageKHR(swapchain.get(), UINT64_MAX,
+  auto result = device_->acquireNextImageKHR(swapchain_.get(), UINT64_MAX,
                                              semaphore, nullptr, &imageIndex);
   if (result != vk::Result::eSuccess) {
     // TODO: check for the other possible "successes" like timeout
@@ -84,7 +63,10 @@ vk::UniqueShaderModule DeviceApi::CreateShaderModule(
 
 vk::UniqueDescriptorSetLayout DeviceApi::CreateDescriptorSetLayout(
     vk::DescriptorSetLayoutCreateInfo const& settings) const {
-  return device_->createDescriptorSetLayoutUnique(settings);
+  if (settings.bindingCount > 0) {
+    return device_->createDescriptorSetLayoutUnique(settings);
+  }
+  return {};
 }
 
 vk::UniquePipelineLayout DeviceApi::CreatePipelineLayout(
@@ -98,10 +80,9 @@ vk::UniquePipelineCache DeviceApi::CreatePipelineCache(
 }
 
 vk::UniqueRenderPass DeviceApi::CreateRenderpass(
-    vk::RenderPassCreateInfo const& settings,
-    vk::Format const surfaceFormat) const {
+    vk::RenderPassCreateInfo const& settings) const {
   auto attachments = *settings.pAttachments;
-  attachments.format = surfaceFormat;
+  attachments.format = surfaceFormat_.format;
   auto updateSetting{settings};
   updateSetting.setAttachments(attachments);
   return device_->createRenderPassUnique(updateSetting);
@@ -115,16 +96,23 @@ vk::UniquePipeline DeviceApi::CreatePipeline(
   return std::move(result.value);
 }
 
+vk::UniqueDescriptorPool DeviceApi::CreateDescriptorPool() const {
+  auto descriptorSizes = vk::DescriptorPoolSize(
+      vk::DescriptorType::eUniformBuffer, GetNumSwapchainImages());
+  return device_->createDescriptorPoolUnique(
+      {vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+       GetNumSwapchainImages(), descriptorSizes});
+}
+
 std::vector<vk::UniqueImageView> DeviceApi::CreateImageViews(
-    vk::UniqueSwapchainKHR const& swapchain, vk::Format const surfaceFormat,
     vk::ComponentMapping const& componentMapping,
     vk::ImageSubresourceRange const& subResourceRange) {
   std::vector<vk::UniqueImageView> imageViews;
-  for (auto& image : device_->getSwapchainImagesKHR(swapchain.get())) {
+  for (auto& image : device_->getSwapchainImagesKHR(swapchain_.get())) {
     imageViews.push_back(device_->createImageViewUnique({{},
                                                          image,
                                                          vk::ImageViewType::e2D,
-                                                         surfaceFormat,
+                                                         surfaceFormat_.format,
                                                          componentMapping,
                                                          subResourceRange}));
   }
@@ -152,10 +140,9 @@ std::vector<Framebuffer> DeviceApi::CreateFramebuffers(
 }
 
 std::vector<vk::UniqueCommandBuffer> DeviceApi::AllocateCommandBuffer(
-    vk::CommandBufferLevel bufferLevel, uint32_t numBuffers,
-    vk::UniqueCommandPool const& commandPool) const {
+    vk::CommandBufferLevel bufferLevel, uint32_t numBuffers) const {
   return device_->allocateCommandBuffersUnique(
-      {commandPool.get(), bufferLevel, numBuffers});
+      {commandPool_.get(), bufferLevel, numBuffers});
 }
 
 vk::UniqueBuffer DeviceApi::CreateBuffer(
@@ -163,14 +150,14 @@ vk::UniqueBuffer DeviceApi::CreateBuffer(
   return device_->createBufferUnique({{}, size, usage});
 }
 
-vk::MemoryRequirements DeviceApi::GetBufferMemoryRequirements(
-    vk::UniqueBuffer const& buffer) const {
-  return device_->getBufferMemoryRequirements(buffer.get());
+AllocationId DeviceApi::AllocateMemory(vk::UniqueBuffer const& buffer,
+                                       vk::MemoryPropertyFlags const flags) {
+  return allocator_.Allocate(buffer, flags,
+                             physicalDevice_.getMemoryProperties(), device_);
 }
 
-vk::UniqueDeviceMemory DeviceApi::AllocateMemory(vk::DeviceSize size,
-                                                 uint32_t typeIndex) const {
-  return device_->allocateMemoryUnique({size, typeIndex});
+void DeviceApi::DeallocateMemory(AllocationId const id) {
+  allocator_.Deallocate(id);
 }
 
 void DeviceApi::BindBufferMemory(vk::UniqueBuffer const& buffer,
@@ -179,14 +166,52 @@ void DeviceApi::BindBufferMemory(vk::UniqueBuffer const& buffer,
   device_->bindBufferMemory(buffer.get(), memory.get(), offset);
 }
 
-void* DeviceApi::MapMemory(vk::UniqueDeviceMemory const& memory,
-                           vk::DeviceSize const offset,
-                           vk::DeviceSize const size) const {
-  return device_->mapMemory(memory.get(), offset, size);
+void* DeviceApi::MapMemory(AllocationId const id) const {
+  return allocator_.MapMemory(id, device_);
 }
 
-void DeviceApi::UnmapMemory(vk::UniqueDeviceMemory const& memory) const {
-  return device_->unmapMemory(memory.get());
+void DeviceApi::UnmapMemory(AllocationId const id) const {
+  allocator_.UnmapMemory(id, device_);
+}
+
+uint64_t DeviceApi::GetMemoryOffset(AllocationId const id) const {
+  return allocator_.GetOffset(id);
+}
+
+std::vector<vk::UniqueDescriptorSet> DeviceApi::AllocateDescriptorSet(
+    vk::DescriptorSetLayout const& layout) const {
+  std::vector<vk::DescriptorSetLayout> layouts(GetNumSwapchainImages(), layout);
+  return device_->allocateDescriptorSetsUnique(
+      {descriptorPool_.get(), layouts});
+}
+
+void DeviceApi::UpdateDescriptorSet(
+    vk::WriteDescriptorSet const& writeSet) const {
+  device_->updateDescriptorSets(writeSet, nullptr);
+}
+
+vk::UniqueSwapchainKHR DeviceApi::CreateSwapchain(
+    vk::UniqueSurfaceKHR const& surface, vk::Extent2D& extent,
+    QueueFamilies const& queueFamilies,
+    vk::UniqueSwapchainKHR const& oldSwapchain) const {
+  auto capabilities = physicalDevice_.getSurfaceCapabilitiesKHR(surface.get());
+  extent = SetExtent(extent, capabilities);
+  vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eColorAttachment |
+                              vk::ImageUsageFlagBits::eTransferSrc;
+
+  vk::SwapchainCreateInfoKHR swapChainCreateInfo(
+      {}, surface.get(), SelectImageCount(capabilities), surfaceFormat_.format,
+      surfaceFormat_.colorSpace, extent, 1, usage, vk::SharingMode::eExclusive,
+      {}, SelectPreTransform(capabilities), SelectCompositeAlpha(capabilities),
+      SelectPresentMode(physicalDevice_, surface), true, oldSwapchain.get());
+
+  if (!queueFamilies.IsUniqueFamilies()) {
+    auto queueIndices = queueFamilies.UniqueIndices();
+    swapChainCreateInfo.imageSharingMode = vk::SharingMode::eConcurrent;
+    swapChainCreateInfo.setQueueFamilyIndices(queueIndices);
+  }
+
+  return device_->createSwapchainKHRUnique(swapChainCreateInfo);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -231,34 +256,6 @@ vk::Extent2D SetExtent(vk::Extent2D const& windowExtent,
               capabilities.maxImageExtent.height);
   }
   return extent;
-}
-
-vk::SurfaceFormatKHR SelectSurfaceFormat(vk::PhysicalDevice const& device,
-                                         vk::UniqueSurfaceKHR const& surface) {
-  auto formats = device.getSurfaceFormatsKHR(surface.get());
-  // Default is undefined
-  vk::SurfaceFormatKHR pickedFormat = {};
-
-  std::vector<vk::Format> requestedFormats = {
-      vk::Format::eB8G8R8A8Unorm, vk::Format::eR8G8B8A8Unorm,
-      vk::Format::eB8G8R8Unorm, vk::Format::eR8G8B8Unorm};
-  vk::ColorSpaceKHR requestedColorSpace = vk::ColorSpaceKHR::eSrgbNonlinear;
-
-  for (size_t i = 0; i < requestedFormats.size(); i++) {
-    auto requestedFormat = requestedFormats[i];
-    auto it = std::find_if(
-        formats.begin(), formats.end(),
-        [requestedFormat, requestedColorSpace](vk::SurfaceFormatKHR const& f) {
-          return (f.format == requestedFormat) &&
-                 (f.colorSpace == requestedColorSpace);
-        });
-    if (it != formats.end()) {
-      pickedFormat = *it;
-      break;
-    }
-  }
-
-  return pickedFormat;
 }
 
 uint32_t SelectImageCount(vk::SurfaceCapabilitiesKHR const& capabilities) {

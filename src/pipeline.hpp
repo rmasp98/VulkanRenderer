@@ -10,15 +10,13 @@ using CommandId = uint32_t;
 
 class Pipeline {
  public:
-  Pipeline(PipelineSettings const& settings, vk::Format const surfaceFormat,
-           vk::Extent2D const& extent,
-           std::vector<vk::UniqueImageView>&& imageViews,
-           DeviceApi const& device)
+  Pipeline(PipelineSettings const& settings, vk::Extent2D const& extent,
+           std::vector<vk::UniqueImageView>&& imageViews, DeviceApi& device)
       : settings_(settings.GetVulkanSettings()),
         shaders_(settings_.CreateShaders(device)),
         layout_(device.CreatePipelineLayout(settings_.LayoutSettings)),
-        renderPass_(device.CreateRenderpass(settings_.GetRenderPassCreateInfo(),
-                                            surfaceFormat)),
+        renderPass_(
+            device.CreateRenderpass(settings_.GetRenderPassCreateInfo())),
         cache_(device.CreatePipelineCache({})),
         pipeline_(device.CreatePipeline(
             cache_, settings_.GetPipelineCreateInfo(GetShaderStages(), layout_,
@@ -35,19 +33,16 @@ class Pipeline {
     return 0;
   }
 
-  void RegisterCommands(DeviceApi& device,
-                        std::shared_ptr<MemoryAllocator>& allocator,
-                        vk::UniqueCommandPool const& commandPool,
-                        vk::Extent2D const& extent) {
+  void RegisterCommands(DeviceApi& device, vk::Extent2D const& extent) {
     for (auto& element : commands_) {
       auto& command = element.second;
       if (!command.IsRegistered()) {
         // TODO: need to get/pass in command pool
-        command.Allocate(device, framebuffers_.size(), commandPool);
+        command.Allocate(device, framebuffers_.size());
 
-        auto descriptorSetLayouts = GetDescriptorSetLayouts();
+        auto uniformBuffers = GetUniformBuffers();
         command.Record(device, pipeline_, renderPass_, framebuffers_,
-                       descriptorSetLayouts, extent, allocator);
+                       uniformBuffers, extent, layout_);
       }
     }
   }
@@ -58,11 +53,9 @@ class Pipeline {
     commands_.at(commandId).Draw(imageIndex, queues);
   }
 
-  void Recreate(vk::Format const surfaceFormat,
-                std::vector<vk::UniqueImageView>&& imageViews,
+  void Recreate(std::vector<vk::UniqueImageView>&& imageViews,
                 vk::Extent2D const& extent, DeviceApi const& device) {
-    renderPass_ = device.CreateRenderpass(settings_.GetRenderPassCreateInfo(),
-                                          surfaceFormat);
+    renderPass_ = device.CreateRenderpass(settings_.GetRenderPassCreateInfo());
     pipeline_ = device.CreatePipeline(
         cache_, settings_.GetPipelineCreateInfo(GetShaderStages(), layout_,
                                                 renderPass_));
@@ -94,14 +87,16 @@ class Pipeline {
     return shaderStages;
   }
 
-  std::unordered_map<vk::ShaderStageFlagBits, vk::DescriptorSetLayout>
-  GetDescriptorSetLayouts() {
-    std::unordered_map<vk::ShaderStageFlagBits, vk::DescriptorSetLayout>
-        descriptorSetLayouts;
+  std::unordered_map<vk::ShaderStageFlagBits, std::shared_ptr<UniformBuffer>>
+  GetUniformBuffers() {
+    std::unordered_map<vk::ShaderStageFlagBits, std::shared_ptr<UniformBuffer>>
+        uniformBuffers;
     for (auto& shader : shaders_) {
-      descriptorSetLayouts.insert({shader.GetType(), shader.GetLayout()});
+      if (shader.GetUniformBuffer()) {
+        uniformBuffers.insert({shader.GetType(), shader.GetUniformBuffer()});
+      }
     }
-    return descriptorSetLayouts;
+    return uniformBuffers;
   }
 };
 

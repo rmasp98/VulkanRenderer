@@ -15,11 +15,20 @@ FetchContent_Declare(
   GIT_TAG        v1.2.200
 )
 
-
+FetchContent_Declare(
+    SPIRV-Reflect
+  GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Reflect
+  GIT_TAG        sdk-1.3.216.0
+)
 
 # Needed to retrieve dependencies for ValidationLayers
 set(UPDATE_DEPS ON)
-FetchContent_MakeAvailable(Vulkan-Headers Vulkan-ValidationLayers)
+
+# SPIRV-Reflection configuration
+set(SPIRV_REFLECT_EXECUTABLE OFF)
+set(SPIRV_REFLECT_EXAMPLES OFF)
+set(SPIRV_REFLECT_STATIC_LIB ON)
+FetchContent_MakeAvailable(Vulkan-Headers Vulkan-ValidationLayers SPIRV-Reflect)
 
 add_subdirectory(src)
 add_subdirectory(test)

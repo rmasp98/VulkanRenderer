@@ -53,14 +53,14 @@ struct VulkanPipelineSettings {
             renderPass.get()};
   }
 
-  std::vector<Shader> CreateShaders(DeviceApi const& device) {
+  std::vector<Shader> CreateShaders(DeviceApi& device) {
     std::vector<Shader> shaders;
     for (auto& shaderDetails : Shaders) {
       shaders.push_back({shaderDetails.first, shaderDetails.second, device});
-    }
-
-    for (auto& shader : shaders) {
-      DescriptorSetLayouts.push_back(shader.GetLayout());
+      auto layout = shaders.back().GetLayout();
+      if (layout) {
+        DescriptorSetLayouts.push_back(layout);
+      }
     }
     LayoutSettings.setSetLayouts(DescriptorSetLayouts);
 
