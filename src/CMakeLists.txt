@@ -18,7 +18,7 @@ target_include_directories(VulkanRenderer
     PUBLIC
         $<INSTALL_INTERFACE:include>
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-        ${PROJECT_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}/src
 )
 
 target_compile_definitions(VulkanRenderer PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1)

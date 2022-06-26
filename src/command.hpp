@@ -5,9 +5,9 @@
 #include <unordered_map>
 #include <vector>
 
+#include "buffers/vertex_buffer.hpp"
 #include "device_api.hpp"
 #include "queues.hpp"
-#include "vertex_buffer.hpp"
 #include "vulkan/vulkan.hpp"
 
 class Command {
@@ -19,61 +19,59 @@ class Command {
   // TODO: Give ability to set a relative viewport and scissor
 
   void Allocate(DeviceApi const& device, uint32_t const numFramebuffers) {
-    cmdBuffers_ = device.AllocateCommandBuffer(vk::CommandBufferLevel::ePrimary,
-                                               numFramebuffers);
+    cmdBuffers_ = device.AllocateCommandBuffers(
+        vk::CommandBufferLevel::ePrimary, numFramebuffers);
   }
 
   void Record(
-      DeviceApi& device, vk::UniquePipeline const& pipeline,
-      vk::UniqueRenderPass const& renderPass,
-      std::vector<Framebuffer> const& framebuffers,
+      ImageIndex const imageIndex, vk::UniquePipeline const& pipeline,
+      vk::UniquePipelineLayout const& pipelineLayout,
+      vk::UniqueRenderPass const& renderPass, Framebuffer const& framebuffer,
       std::unordered_map<vk::ShaderStageFlagBits,
                          std::shared_ptr<UniformBuffer>>& uniformBuffers,
-      vk::Extent2D const& extent,
-      vk::UniquePipelineLayout const& pipelineLayout) {
-    assert(cmdBuffers_.size() == framebuffers.size());
-    for (uint32_t i = 0; i < cmdBuffers_.size(); ++i) {
-      auto& cmdBuffer = cmdBuffers_[i];
-      cmdBuffer->begin(
-          vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlags()));
+      vk::Extent2D const& extent, Queues const& queues, DeviceApi& device) {
+    assert(imageIndex < cmdBuffers_.size());
 
-      std::array<vk::ClearValue, 1> clearValues;
-      clearValues[0].color =
-          vk::ClearColorValue(std::array<float, 4>({{0.2f, 0.2f, 0.2f, 0.2f}}));
+    auto& cmdBuffer = cmdBuffers_[imageIndex];
+    cmdBuffer->reset();
+    cmdBuffer->begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlags()));
 
-      cmdBuffer->beginRenderPass(
-          {renderPass.get(), framebuffers[i].GetFramebuffer(),
-           vk::Rect2D(vk::Offset2D(0, 0), extent), clearValues},
-          vk::SubpassContents::eInline);
+    std::array<vk::ClearValue, 1> clearValues;
+    clearValues[0].color =
+        vk::ClearColorValue(std::array<float, 4>({{0.2f, 0.2f, 0.2f, 0.2f}}));
 
-      cmdBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.get());
+    cmdBuffer->beginRenderPass(
+        {renderPass.get(), framebuffer.GetFramebuffer(),
+         vk::Rect2D(vk::Offset2D(0, 0), extent), clearValues},
+        vk::SubpassContents::eInline);
 
-      cmdBuffer->setViewport(
-          0, vk::Viewport(0.0f, 0.0f, static_cast<float>(extent.width),
-                          static_cast<float>(extent.height), 0.0f, 1.0f));
-      cmdBuffer->setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
+    cmdBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.get());
 
-      for (auto& uniformBuffer : uniformBuffers) {
-        uniformBuffer.second->Bind(0, cmdBuffer, pipelineLayout);
-      }
+    cmdBuffer->setViewport(
+        0, vk::Viewport(0.0f, 0.0f, static_cast<float>(extent.width),
+                        static_cast<float>(extent.height), 0.0f, 1.0f));
+    cmdBuffer->setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
 
-      for (auto& vertBuffer : vertBuffers_) {
-        if (!vertBuffer->IsUploaded()) {
-          vertBuffer->Upload(device);
-        }
-        vertBuffer->UpdateUniformBuffer(uniformBuffers, 0, device);
-        vertBuffer->Record(cmdBuffer, pipelineLayout);
-      }
-
-      cmdBuffer->endRenderPass();
-      cmdBuffer->end();
+    for (auto& uniformBuffer : uniformBuffers) {
+      uniformBuffer.second->Bind(imageIndex, cmdBuffer, pipelineLayout);
     }
-    isRegistered_ = true;
+
+    for (auto& vertBuffer : vertBuffers_) {
+      if (!vertBuffer->IsUploaded()) {
+        vertBuffer->Upload(queues, device);
+      }
+      vertBuffer->UpdateUniformBuffer(uniformBuffers, imageIndex, queues,
+                                      device);
+      vertBuffer->Record(cmdBuffer);
+    }
+
+    cmdBuffer->endRenderPass();
+    cmdBuffer->end();
   }
 
-  bool IsRegistered() { return isRegistered_; }
+  bool IsAllocated() { return !cmdBuffers_.empty(); }
 
-  void Unregister() { isRegistered_ = false; }
+  void Unregister() { cmdBuffers_.clear(); }
 
   void Draw(uint32_t const imageIndex, Queues const& queues) const {
     queues.SubmitToGraphics(cmdBuffers_[imageIndex]);
@@ -82,5 +80,4 @@ class Command {
  private:
   std::vector<vk::UniqueCommandBuffer> cmdBuffers_;
   std::vector<std::unique_ptr<Buffer>> vertBuffers_;
-  bool isRegistered_ = false;
 };

@@ -13,7 +13,7 @@ uint32_t DeviceApi::GetNumSwapchainImages() const {
   return device_->getSwapchainImagesKHR(swapchain_.get()).size();
 }
 
-uint32_t DeviceApi::GetNextImageIndex(vk::Semaphore const& semaphore) {
+ImageIndex DeviceApi::GetNextImageIndex(vk::Semaphore const& semaphore) {
   uint32_t imageIndex;
   auto result = device_->acquireNextImageKHR(swapchain_.get(), UINT64_MAX,
                                              semaphore, nullptr, &imageIndex);
@@ -50,7 +50,9 @@ void DeviceApi::ResetFences(std::vector<vk::Fence> const& fences) const {
 
 vk::UniqueCommandPool DeviceApi::CreateCommandPool(
     uint32_t const graphicsFamilyIndex) const {
-  return device_->createCommandPoolUnique({{}, graphicsFamilyIndex});
+  return device_->createCommandPoolUnique(
+      {vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+       graphicsFamilyIndex});
 }
 
 vk::UniqueShaderModule DeviceApi::CreateShaderModule(
@@ -139,7 +141,7 @@ std::vector<Framebuffer> DeviceApi::CreateFramebuffers(
   return framebuffers;
 }
 
-std::vector<vk::UniqueCommandBuffer> DeviceApi::AllocateCommandBuffer(
+std::vector<vk::UniqueCommandBuffer> DeviceApi::AllocateCommandBuffers(
     vk::CommandBufferLevel bufferLevel, uint32_t numBuffers) const {
   return device_->allocateCommandBuffersUnique(
       {commandPool_.get(), bufferLevel, numBuffers});

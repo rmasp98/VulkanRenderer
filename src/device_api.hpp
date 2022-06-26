@@ -16,6 +16,8 @@ vk::UniqueDevice CreateVulkanDevice(
 
 inline std::vector<char const*> extensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
+using ImageIndex = uint32_t;
+
 class DeviceApi {
  public:
   DeviceApi(vk::PhysicalDevice const& physicalDevice,
@@ -38,7 +40,7 @@ class DeviceApi {
 
   uint32_t GetNumSwapchainImages() const;
 
-  uint32_t GetNextImageIndex(vk::Semaphore const& semaphore);
+  ImageIndex GetNextImageIndex(vk::Semaphore const& semaphore);
 
   vk::Queue GetQueue(uint32_t const queueFamily,
                      uint32_t const queueIndex) const;
@@ -105,7 +107,7 @@ class DeviceApi {
   // Command Creation
   //////////////////////////////////////////////////////////////////////////////
 
-  std::vector<vk::UniqueCommandBuffer> AllocateCommandBuffer(
+  std::vector<vk::UniqueCommandBuffer> AllocateCommandBuffers(
       vk::CommandBufferLevel bufferLevel, uint32_t numBuffers) const;
 
   //////////////////////////////////////////////////////////////////////////////

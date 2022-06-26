@@ -31,7 +31,7 @@ int main() {
                                          {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}}));
 
   auto uniformData = std::make_shared<UniformDataImpl<MVP>>(
-      MVP{2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1});
+      MVP{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1});
 
   buffer->SetUniformData(vk::ShaderStageFlagBits::eVertex, uniformData);
 

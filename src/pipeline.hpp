@@ -33,17 +33,19 @@ class Pipeline {
     return 0;
   }
 
-  void RegisterCommands(DeviceApi& device, vk::Extent2D const& extent) {
+  void RecordCommands(ImageIndex const imageIndex, vk::Extent2D const& extent,
+                      Queues const& queues, DeviceApi& device) {
+    assert(imageIndex < framebuffers_.size());
     for (auto& element : commands_) {
       auto& command = element.second;
-      if (!command.IsRegistered()) {
-        // TODO: need to get/pass in command pool
+      if (!command.IsAllocated()) {
         command.Allocate(device, framebuffers_.size());
-
-        auto uniformBuffers = GetUniformBuffers();
-        command.Record(device, pipeline_, renderPass_, framebuffers_,
-                       uniformBuffers, extent, layout_);
       }
+
+      auto uniformBuffers = GetUniformBuffers();
+      command.Record(imageIndex, pipeline_, layout_, renderPass_,
+                     framebuffers_[imageIndex], uniformBuffers, extent, queues,
+                     device);
     }
   }
 

@@ -3,9 +3,9 @@
 #include <fstream>
 #include <vector>
 
+#include "buffers/uniform_buffer.hpp"
 #include "device_api.hpp"
 #include "spirv_reflect.h"
-#include "uniform_buffer.hpp"
 #include "vulkan/vulkan.hpp"
 
 struct ShaderDetails {
@@ -44,6 +44,7 @@ class Shader {
  private:
   vk::ShaderStageFlagBits type_;
   vk::UniqueShaderModule module_;
+  // TODO: This needs to be an array for different sets
   std::shared_ptr<UniformBuffer> uniformBuffer_;
 };
 

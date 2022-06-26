@@ -34,13 +34,14 @@ class Device {
         // TODO: figure out how to handle a timeout
       }
 
+      // TODO: might be mixing imageIndex with current frame
       auto imageIndex =
           api_.GetNextImageIndex(queues_.GetImageAquiredSemaphore());
 
       queues_.WaitForImageInFlight(api_, imageIndex);
       queues_.ResetRenderCompleteFence(api_);
 
-      pipeline->RegisterCommands(api_, extent_);
+      pipeline->RecordCommands(imageIndex, extent_, queues_, api_);
       pipeline->Draw(commandId, imageIndex, queues_);
 
       queues_.SubmitToPresent(imageIndex, api_.GetSwapchain());

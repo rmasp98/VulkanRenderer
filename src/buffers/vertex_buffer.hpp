@@ -1,45 +1,24 @@
 #pragma once
 
+#include "device_buffer.hpp"
+#include "queues.hpp"
 #include "uniform_buffer.hpp"
-
-class UniformData {
- public:
-  virtual void UpdateBuffer(std::shared_ptr<UniformBuffer>&) const = 0;
-};
-
-template <class T>
-class UniformDataImpl : public UniformData {
- public:
-  UniformDataImpl(T const& data) : data_(data) {}
-
-  void Set(T const& data) { data_ = data; }
-
-  virtual void UpdateBuffer(
-      std::shared_ptr<UniformBuffer>& buffer) const override {
-    buffer->Update(data_);
-  }
-
- private:
-  T data_;
-};
 
 class Buffer {
  public:
   virtual ~Buffer() = default;
   virtual void SetUniformData(vk::ShaderStageFlagBits const,
                               std::shared_ptr<UniformData> const&) = 0;
-  virtual void Upload(DeviceApi&) = 0;
+  virtual void Upload(Queues const&, DeviceApi&) = 0;
 
   virtual void UpdateUniformBuffer(
       std::unordered_map<vk::ShaderStageFlagBits,
                          std::shared_ptr<UniformBuffer>>&,
-      uint32_t const bufferId, DeviceApi const&) = 0;
+      uint32_t const bufferId, Queues const&, DeviceApi&) = 0;
 
   virtual bool IsUploaded() const = 0;
-  virtual void Bind(vk::UniqueCommandBuffer const&,
-                    vk::UniquePipelineLayout const&) const = 0;
-  virtual void Record(vk::UniqueCommandBuffer const&,
-                      vk::UniquePipelineLayout const&) const = 0;
+  virtual void Bind(vk::UniqueCommandBuffer const&) const = 0;
+  virtual void Record(vk::UniqueCommandBuffer const&) const = 0;
 };
 
 struct ColouredVertex2D {
@@ -66,40 +45,36 @@ class VertexBuffer : public Buffer {
     uniformData_[shader] = data;
   }
 
-  virtual void Upload(DeviceApi& device) override {
+  virtual void Upload(Queues const& queues, DeviceApi& device) override {
     // TODO: maybe check to see if already created and right size
     deviceBuffer_ = std::make_unique<DeviceBuffer>(
-        data_.size() * sizeof(T), vk::BufferUsageFlagBits::eVertexBuffer, false,
+        data_.size() * sizeof(T), vk::BufferUsageFlagBits::eVertexBuffer, true,
         device);
-    deviceBuffer_->Upload(data_.data(), device);
+    deviceBuffer_->Upload(data_.data(), queues, device);
   }
 
   virtual void UpdateUniformBuffer(
       std::unordered_map<vk::ShaderStageFlagBits,
                          std::shared_ptr<UniformBuffer>>& buffers,
-      uint32_t const bufferId, DeviceApi const& device) {
+      uint32_t const bufferId, Queues const& queues, DeviceApi& device) {
     for (auto& data : uniformData_) {
       if (buffers.contains(data.first)) {
         data.second->UpdateBuffer(buffers[data.first]);
-        buffers[data.first]->Upload(bufferId, device);
+        buffers[data.first]->Upload(bufferId, queues, device);
       }
     }
   }
 
   virtual bool IsUploaded() const override { return deviceBuffer_ != nullptr; }
 
-  virtual void Bind(
-      vk::UniqueCommandBuffer const& cmdBuffer,
-      vk::UniquePipelineLayout const& pipelineLayout) const override {
+  virtual void Bind(vk::UniqueCommandBuffer const& cmdBuffer) const override {
     if (deviceBuffer_) {
       deviceBuffer_->Bind(cmdBuffer);
     }
   }
 
-  virtual void Record(
-      vk::UniqueCommandBuffer const& cmdBuffer,
-      vk::UniquePipelineLayout const& pipelineLayout) const override {
-    Bind(cmdBuffer, pipelineLayout);
+  virtual void Record(vk::UniqueCommandBuffer const& cmdBuffer) const override {
+    Bind(cmdBuffer);
     cmdBuffer->draw(data_.size(), 1, 0, 0);
   }
 
@@ -122,23 +97,23 @@ class IndexBuffer : public Buffer {
     uniformData_[shader] = data;
   }
 
-  virtual void Upload(DeviceApi& device) override {
+  virtual void Upload(Queues const& queues, DeviceApi& device) override {
     // TODO: maybe check to see if already created and right size
-    vertexBuffer_.Upload(device);
+    vertexBuffer_.Upload(queues, device);
     deviceBuffer_ = std::make_unique<DeviceBuffer>(
         indices_.size() * sizeof(uint16_t),
-        vk::BufferUsageFlagBits::eIndexBuffer, false, device);
-    deviceBuffer_->Upload(indices_.data(), device);
+        vk::BufferUsageFlagBits::eIndexBuffer, true, device);
+    deviceBuffer_->Upload(indices_.data(), queues, device);
   }
 
   virtual void UpdateUniformBuffer(
       std::unordered_map<vk::ShaderStageFlagBits,
                          std::shared_ptr<UniformBuffer>>& buffers,
-      uint32_t const bufferId, DeviceApi const& device) {
+      uint32_t const bufferId, Queues const& queues, DeviceApi& device) {
     for (auto& data : uniformData_) {
       if (buffers.contains(data.first)) {
         data.second->UpdateBuffer(buffers[data.first]);
-        buffers[data.first]->Upload(bufferId, device);
+        buffers[data.first]->Upload(bufferId, queues, device);
       }
     }
   }
@@ -147,17 +122,13 @@ class IndexBuffer : public Buffer {
     return vertexBuffer_.IsUploaded() && deviceBuffer_ != nullptr;
   }
 
-  virtual void Bind(
-      vk::UniqueCommandBuffer const& cmdBuffer,
-      vk::UniquePipelineLayout const& pipelineLayout) const override {
-    vertexBuffer_.Bind(cmdBuffer, pipelineLayout);
+  virtual void Bind(vk::UniqueCommandBuffer const& cmdBuffer) const override {
+    vertexBuffer_.Bind(cmdBuffer);
     deviceBuffer_->BindIndex(cmdBuffer);
   }
 
-  virtual void Record(
-      vk::UniqueCommandBuffer const& cmdBuffer,
-      vk::UniquePipelineLayout const& pipelineLayout) const override {
-    Bind(cmdBuffer, pipelineLayout);
+  virtual void Record(vk::UniqueCommandBuffer const& cmdBuffer) const override {
+    Bind(cmdBuffer);
     cmdBuffer->drawIndexed(indices_.size(), 1, 0, 0, 0);
   }
 
