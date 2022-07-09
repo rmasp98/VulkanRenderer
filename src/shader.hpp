@@ -3,19 +3,21 @@
 #include <fstream>
 #include <vector>
 
-#include "buffers/uniform_buffer.hpp"
+// #include "buffers/uniform_buffer.hpp"
 #include "device_api.hpp"
 #include "spirv_reflect.h"
 #include "vulkan/vulkan.hpp"
+
+using SetBindingsMap =
+    std::unordered_map<uint32_t, std::vector<vk::DescriptorSetLayoutBinding>>;
 
 struct ShaderDetails {
   std::vector<char> FileContents;
   std::vector<vk::DescriptorSetLayoutBinding> Bindings;
 };
 
-std::shared_ptr<UniformBuffer> GetUniformBufferFromShader(
-    vk::ShaderStageFlagBits const type, std::vector<char> const& fileContents,
-    DeviceApi& device);
+inline SetBindingsMap GetBindingsFromShader(
+    vk::ShaderStageFlagBits const type, std::vector<char> const& fileContents);
 
 class Shader {
  public:
@@ -23,29 +25,21 @@ class Shader {
          DeviceApi& device)
       : type_(type),
         module_(device.CreateShaderModule(details.FileContents)),
-        uniformBuffer_(std::move(
-            GetUniformBufferFromShader(type, details.FileContents, device))) {}
+        setBindings_(GetBindingsFromShader(type, details.FileContents)) {}
 
   vk::PipelineShaderStageCreateInfo GetStage() const {
     return {{}, type_, module_.get(), "main"};
   }
 
-  vk::DescriptorSetLayout GetLayout() const {
-    if (uniformBuffer_) {
-      return uniformBuffer_->GetLayout();
-    }
-    return {};
-  }
+  SetBindingsMap const& GetBindings() const { return setBindings_; }
 
-  std::shared_ptr<UniformBuffer>& GetUniformBuffer() { return uniformBuffer_; }
-
-  vk::ShaderStageFlagBits GetType() { return type_; }
+  vk::ShaderStageFlagBits GetType() const { return type_; }
 
  private:
   vk::ShaderStageFlagBits type_;
   vk::UniqueShaderModule module_;
-  // TODO: This needs to be an array for different sets
-  std::shared_ptr<UniformBuffer> uniformBuffer_;
+  std::unordered_map<uint32_t, std::vector<vk::DescriptorSetLayoutBinding>>
+      setBindings_;
 };
 
 // TODO: change this to a char const*?
@@ -65,9 +59,8 @@ inline std::vector<char> LoadShader(char const* filename) {
   return buffer;
 }
 
-inline std::shared_ptr<UniformBuffer> GetUniformBufferFromShader(
-    vk::ShaderStageFlagBits const type, std::vector<char> const& fileContents,
-    DeviceApi& device) {
+inline SetBindingsMap GetBindingsFromShader(
+    vk::ShaderStageFlagBits const type, std::vector<char> const& fileContents) {
   // Generate reflection data for a shader
   SpvReflectShaderModule module;
   SpvReflectResult result = spvReflectCreateShaderModule(
@@ -83,25 +76,21 @@ inline std::shared_ptr<UniformBuffer> GetUniformBufferFromShader(
   result = spvReflectEnumerateDescriptorSets(&module, &numSets, descriptorSets);
   assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
-  std::vector<vk::DescriptorSetLayoutBinding> bindings;
+  SetBindingsMap setBindings;
   for (uint32_t i = 0; i < numSets; ++i) {
+    std::vector<vk::DescriptorSetLayoutBinding> bindings;
+    auto set = descriptorSets[i];
     for (uint32_t j = 0; j < descriptorSets[i]->binding_count; j++) {
-      auto& binding = descriptorSets[i]->bindings[j];
+      auto& binding = set->bindings[j];
       bindings.push_back(
           {binding->binding,
            static_cast<vk::DescriptorType>(binding->descriptor_type),
            binding->count, type, nullptr});
     }
+    if (bindings.size()) {
+      setBindings.insert({set->set, bindings});
+    }
   }
 
-  if (!bindings.empty()) {
-    auto layout = device.CreateDescriptorSetLayout({{}, bindings});
-
-    // TODO: create a function that finds the correct template from reflection
-    auto uniformBuffer =
-        std::make_shared<UniformBufferImpl<MVP>>(std::move(layout));
-    uniformBuffer->AllocateBuffer(device);
-    return uniformBuffer;
-  }
-  return {};
+  return setBindings;
 }

@@ -1,61 +1,33 @@
 #pragma once
 
+#include "descriptor_sets.hpp"
 #include "device_api.hpp"
-#include "device_buffer.hpp"
 #include "queues.hpp"
+
+class Uniform {
+ public:
+  virtual ~Uniform() = default;
+
+  virtual void Allocate(Queues const&, DeviceApi&,
+                        bool const force = false) = 0;
+  virtual void Deallocate() = 0;
+
+  virtual void Upload(ImageIndex const, Queues const&, DeviceApi&) = 0;
+
+  virtual void AddDescriptorSetUpdate(
+      ImageIndex const, std::unique_ptr<DescriptorSets>&) const = 0;
+};
 
 struct MVP {
   float data[16];
   auto operator<=>(MVP const& rhs) const = default;
 };
 
-class UniformBuffer {
+template <typename T>
+class UniformBuffer : public Uniform {
  public:
-  virtual ~UniformBuffer() = default;
-
-  virtual void AllocateBuffer(DeviceApi&) = 0;
-  virtual void DeallocateBuffer() = 0;
-
-  template <class T>
-  void Update(T const& data) {
-    assert(typeid(T) == GetTypeId());
-    UpdateInternal(static_cast<void const*>(&data));
-  }
-
-  virtual void Upload(ImageIndex const, Queues const&, DeviceApi&) = 0;
-
-  virtual void Bind(ImageIndex const, vk::UniqueCommandBuffer const&,
-                    vk::UniquePipelineLayout const&) const = 0;
-
-  virtual vk::DescriptorSetLayout GetLayout() = 0;
-
- protected:
-  virtual void UpdateInternal(void const* data) = 0;
-  virtual const std::type_info& GetTypeId() const = 0;
-};
-
-template <class T>
-class UniformBufferImpl : public UniformBuffer {
- public:
-  UniformBufferImpl(vk::UniqueDescriptorSetLayout&& layout)
-      : layout_(std::move(layout)) {}
-
-  virtual void AllocateBuffer(DeviceApi& device) override {
-    auto numBuffers = device.GetNumSwapchainImages();
-    descriptorSets_ = device.AllocateDescriptorSet(layout_.get());
-
-    for (uint32_t i = 0; i < numBuffers; ++i) {
-      DeviceBuffer buffer{sizeof(T), vk::BufferUsageFlagBits::eUniformBuffer,
-                          false, device};
-      buffer.UpdateDescriptorSet(descriptorSets_[i], sizeof(T), device);
-      deviceBuffers_.push_back(std::move(buffer));
-    }
-  }
-
-  virtual void DeallocateBuffer() override {
-    deviceBuffers_.clear();
-    descriptorSets_.clear();
-  }
+  UniformBuffer(T const& data, uint32_t const binding, uint32_t const set = 0)
+      : data_(data), binding_(binding), set_(set) {}
 
   void Update(T const& data) {
     if (data_ != data) {
@@ -66,58 +38,91 @@ class UniformBufferImpl : public UniformBuffer {
     }
   }
 
-  virtual void Upload(ImageIndex const imageIndex, Queues const& queues,
-                      DeviceApi& device) override {
+ protected:
+  void Allocate(Queues const& queues, DeviceApi& device,
+                bool const force) override {
+    if (force || deviceBuffers_.size() == 0) {
+      for (uint32_t i = 0; i < device.GetNumSwapchainImages(); ++i) {
+        deviceBuffers_.push_back({sizeof(T),
+                                  vk::BufferUsageFlagBits::eUniformBuffer,
+                                  false, device});
+      }
+    }
+  }
+
+  void Deallocate() override { deviceBuffers_.clear(); }
+
+  void Upload(ImageIndex const imageIndex, Queues const& queues,
+              DeviceApi& device) override {
     assert(imageIndex < deviceBuffers_.size());
     if (deviceBuffers_[imageIndex].IsOutdated()) {
       deviceBuffers_[imageIndex].Upload(&data_, queues, device);
     }
   }
 
-  virtual void Bind(ImageIndex const imageIndex,
-                    vk::UniqueCommandBuffer const& cmdBuffer,
-                    vk::UniquePipelineLayout const& layout) const override {
-    assert(imageIndex < descriptorSets_.size());
-    cmdBuffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                  layout.get(), 0,
-                                  {descriptorSets_[imageIndex].get()}, {});
+  void AddDescriptorSetUpdate(
+      ImageIndex const imageIndex,
+      std::unique_ptr<DescriptorSets>& descriptorSets) const override {
+    assert(imageIndex < deviceBuffers_.size());
+    vk::WriteDescriptorSet writeSet{
+        {},      binding_, 0,      1, vk::DescriptorType::eUniformBuffer,
+        nullptr, nullptr,  nullptr};
+    deviceBuffers_[imageIndex].AddDescriptorSetUpdate(set_, imageIndex,
+                                                      writeSet, descriptorSets);
   }
 
-  virtual vk::DescriptorSetLayout GetLayout() { return layout_.get(); };
+ private:
+  T data_;
+  uint32_t binding_;
+  uint32_t set_;
+  std::vector<DeviceBuffer> deviceBuffers_;
+};
+
+class UniformImage : public Uniform {
+ public:
+  UniformImage(std::vector<unsigned char> const& data,
+               ImageProperties const& properties, uint32_t const binding,
+               uint32_t const set = 0)
+      : data_(data), properties_(properties), binding_(binding), set_(set) {
+    assert(data_.size() == properties_.Extent.width *
+                               properties_.Extent.height *
+                               properties_.Extent.depth * 4);
+  }
 
  protected:
-  // The caller of this function is responsible for checking data is of valid
-  // type T
-  virtual void UpdateInternal(void const* data) override {
-    Update(*static_cast<T const*>(data));
+  void Allocate(Queues const& queues, DeviceApi& device,
+                bool const force) override {
+    if (force || imageBuffer_ == nullptr) {
+      imageBuffer_ = std::make_unique<ImageBuffer>(
+          properties_, queues.GetQueueFamilies().UniqueIndices(), device);
+    }
   }
 
-  virtual const std::type_info& GetTypeId() const override { return typeid(T); }
+  void Deallocate() override { imageBuffer_.reset(); }
 
- private:
-  T data_;
-  std::vector<vk::UniqueDescriptorSet> descriptorSets_;
-  std::vector<DeviceBuffer> deviceBuffers_;
-  vk::UniqueDescriptorSetLayout layout_;
-};
+  void Upload(ImageIndex const, Queues const& queues,
+              DeviceApi& device) override {
+    assert(imageBuffer_);
+    if (imageBuffer_->IsOutdated()) {
+      imageBuffer_->Upload(data_, properties_.Extent, queues, device);
+    }
+  }
 
-class UniformData {
- public:
-  virtual void UpdateBuffer(std::shared_ptr<UniformBuffer>&) const = 0;
-};
-
-template <class T>
-class UniformDataImpl : public UniformData {
- public:
-  UniformDataImpl(T const& data) : data_(data) {}
-
-  void Set(T const& data) { data_ = data; }
-
-  virtual void UpdateBuffer(
-      std::shared_ptr<UniformBuffer>& buffer) const override {
-    buffer->Update(data_);
+  void AddDescriptorSetUpdate(
+      ImageIndex const imageIndex,
+      std::unique_ptr<DescriptorSets>& descriptorSets) const override {
+    assert(imageBuffer_);
+    vk::WriteDescriptorSet writeSet{
+        {},      binding_, 0,      1, vk::DescriptorType::eCombinedImageSampler,
+        nullptr, nullptr,  nullptr};
+    imageBuffer_->AddDescriptorSetUpdate(set_, imageIndex, writeSet,
+                                         descriptorSets);
   }
 
  private:
-  T data_;
+  std::vector<unsigned char> data_;
+  ImageProperties properties_;
+  uint32_t binding_;
+  uint32_t set_;
+  std::unique_ptr<ImageBuffer> imageBuffer_;
 };

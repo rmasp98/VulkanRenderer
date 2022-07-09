@@ -20,40 +20,28 @@ struct MemoryMetaData {
 class MemoryAllocator {
  public:
   // TODO: this should take device to create memory
-  MemoryAllocator() = default;
+  MemoryAllocator(vk::PhysicalDevice const& device)
+      : memoryProperties_(device.getMemoryProperties()) {}
 
-  AllocationId Allocate(
-      vk::UniqueBuffer const& buffer, vk::MemoryPropertyFlags const flags,
-      vk::PhysicalDeviceMemoryProperties const& memoryProperties,
-      vk::UniqueDevice const& device) {
-    uint32_t typeIndex = uint32_t(~0);
+  AllocationId Allocate(vk::UniqueBuffer const& buffer,
+                        vk::MemoryPropertyFlags const flags,
+                        vk::UniqueDevice const& device) {
     auto memoryRequirements = device->getBufferMemoryRequirements(buffer.get());
-    auto typeBits = memoryRequirements.memoryTypeBits;
-
-    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
-      if ((typeBits & 1) &&
-          ((memoryProperties.memoryTypes[i].propertyFlags & flags) == flags)) {
-        typeIndex = i;
-        break;
-      }
-      typeBits >>= 1;
-    }
-    assert(typeIndex != uint32_t(~0));
-
-    auto memory =
-        device->allocateMemoryUnique({memoryRequirements.size, typeIndex});
+    auto id = Allocate(memoryRequirements, flags, device);
 
     // TODO: add offset to this
-    device->bindBufferMemory(buffer.get(), memory.get(), 0);
+    device->bindBufferMemory(buffer.get(), allocations_.at(id).Memory.get(), 0);
+    return id;
+  }
 
-    auto id = currentId_++;
+  AllocationId Allocate(vk::UniqueImage const& image,
+                        vk::MemoryPropertyFlags const flags,
+                        vk::UniqueDevice const& device) {
+    auto memoryRequirements = device->getImageMemoryRequirements(image.get());
+    auto id = Allocate(memoryRequirements, flags, device);
 
-    // TODO: figure out how to construct this in the insert
-    auto a = MemoryMetaData{std::move(memory), 0, memoryRequirements.size};
-    // TODO: probably should make this thread safe
-    allocations_.insert({id, std::move(a)});
-
-    // Return the id for allocation
+    // TODO: add offset to this
+    device->bindImageMemory(image.get(), allocations_.at(id).Memory.get(), 0);
     return id;
   }
 
@@ -79,8 +67,36 @@ class MemoryAllocator {
     return mmd.Offset;
   }
 
+ protected:
+  AllocationId Allocate(vk::MemoryRequirements const& memoryRequirements,
+                        vk::MemoryPropertyFlags const flags,
+                        vk::UniqueDevice const& device) {
+    auto typeBits = memoryRequirements.memoryTypeBits;
+
+    uint32_t typeIndex = uint32_t(~0);
+    for (uint32_t i = 0; i < memoryProperties_.memoryTypeCount; i++) {
+      if ((typeBits & 1) &&
+          ((memoryProperties_.memoryTypes[i].propertyFlags & flags) == flags)) {
+        typeIndex = i;
+        break;
+      }
+      typeBits >>= 1;
+    }
+    assert(typeIndex != uint32_t(~0));
+
+    auto memory =
+        device->allocateMemoryUnique({memoryRequirements.size, typeIndex});
+
+    auto id = currentId_++;
+    auto a = MemoryMetaData{std::move(memory), 0, memoryRequirements.size};
+    // TODO: probably should make this thread safe
+    allocations_.insert({id, std::move(a)});
+
+    return id;
+  }
+
  private:
-  vk::PhysicalDeviceMemoryProperties const memoryProperties_;
+  vk::PhysicalDeviceMemoryProperties memoryProperties_;
   std::map<AllocationId, MemoryMetaData> allocations_;
   std::atomic<uint32_t> currentId_;
 };

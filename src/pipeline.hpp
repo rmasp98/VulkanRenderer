@@ -10,11 +10,14 @@ using CommandId = uint32_t;
 
 class Pipeline {
  public:
+  // TODO: should probably have the commandPool and descriptor pool here
   Pipeline(PipelineSettings const& settings, vk::Extent2D const& extent,
            std::vector<vk::UniqueImageView>&& imageViews, DeviceApi& device)
       : settings_(settings.GetVulkanSettings()),
         shaders_(settings_.CreateShaders(device)),
-        layout_(device.CreatePipelineLayout(settings_.LayoutSettings)),
+        descriptorSetLayouts_(shaders_, device),
+        layout_(device.CreatePipelineLayout(
+            settings_.LayoutSettings, descriptorSetLayouts_.GetLayouts())),
         renderPass_(
             device.CreateRenderpass(settings_.GetRenderPassCreateInfo())),
         cache_(device.CreatePipelineCache({})),
@@ -25,10 +28,8 @@ class Pipeline {
             std::forward<std::vector<vk::UniqueImageView>>(imageViews),
             renderPass_, extent)) {}
 
-  // TODO: need to recreate pipeline/framebuffers whatever else on swapchain
-  // reset
-
   CommandId AddCommand(Command&& command) {
+    // TODO: do this properly
     commands_.emplace(0, std::move(command));
     return 0;
   }
@@ -36,16 +37,13 @@ class Pipeline {
   void RecordCommands(ImageIndex const imageIndex, vk::Extent2D const& extent,
                       Queues const& queues, DeviceApi& device) {
     assert(imageIndex < framebuffers_.size());
+
     for (auto& element : commands_) {
       auto& command = element.second;
-      if (!command.IsAllocated()) {
-        command.Allocate(device, framebuffers_.size());
-      }
+      command.Initialise(descriptorSetLayouts_, queues, device);
 
-      auto uniformBuffers = GetUniformBuffers();
       command.Record(imageIndex, pipeline_, layout_, renderPass_,
-                     framebuffers_[imageIndex], uniformBuffers, extent, queues,
-                     device);
+                     framebuffers_[imageIndex], extent, queues, device);
     }
   }
 
@@ -71,9 +69,9 @@ class Pipeline {
   }
 
  private:
-  // TODO: do we need settings?
   VulkanPipelineSettings settings_;
   std::vector<Shader> shaders_;
+  DescriptorSetLayouts descriptorSetLayouts_;
   vk::UniquePipelineLayout layout_;
   vk::UniqueRenderPass renderPass_;
   vk::UniquePipelineCache cache_;
@@ -88,30 +86,4 @@ class Pipeline {
     }
     return shaderStages;
   }
-
-  std::unordered_map<vk::ShaderStageFlagBits, std::shared_ptr<UniformBuffer>>
-  GetUniformBuffers() {
-    std::unordered_map<vk::ShaderStageFlagBits, std::shared_ptr<UniformBuffer>>
-        uniformBuffers;
-    for (auto& shader : shaders_) {
-      if (shader.GetUniformBuffer()) {
-        uniformBuffers.insert({shader.GetType(), shader.GetUniformBuffer()});
-      }
-    }
-    return uniformBuffers;
-  }
 };
-
-// std::vector<Framebuffer> RegisterCommands(std::shared_ptr<Device>& device,
-//                                           vk::Extent2D const& extent) {
-//   // Might need to free buffers?
-//   auto descriptorSetLayouts = GetDescriptorSetLayouts();
-//   for (auto& command : commands_) {
-//     command.second.Allocate(device, NumBuffers());
-//     command.second.Record(device, pipeline_, renderPass_, framebuffers_,
-//                           descriptorSetLayouts, extent);
-//   }
-//   RegisterCommands(device, extent);
-
-//   return framebuffers;
-// }

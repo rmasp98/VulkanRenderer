@@ -70,8 +70,7 @@ static inline vk::PipelineDynamicStateCreateInfo const DynamicState{
     {}, DynamicStates};
 
 // Layout
-static inline vk::PipelineLayoutCreateInfo const LayoutCreateInfo{
-    {}, nullptr, nullptr};
+static inline vk::PipelineLayoutCreateInfo const LayoutCreateInfo{{}, {}};
 
 // RenderPass
 static inline vk::AttachmentDescription const ColourAttachment{

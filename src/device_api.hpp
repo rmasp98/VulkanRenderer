@@ -30,7 +30,8 @@ class DeviceApi {
         surfaceFormat_(surfaceFormat),
         swapchain_(CreateSwapchain(surface, extent, queueFamilies, {})),
         commandPool_(CreateCommandPool(queueFamilies.Graphics())),
-        descriptorPool_(CreateDescriptorPool()) {}
+        descriptorPool_(CreateDescriptorPool()),
+        allocator_(physicalDevice_) {}
 
   void RecreateSwapchain(vk::UniqueSurfaceKHR const& surface,
                          vk::Extent2D& extent,
@@ -76,7 +77,8 @@ class DeviceApi {
   // Pipeline Creation
   ////////////////////////////////////////////////////////////////////////
   vk::UniquePipelineLayout CreatePipelineLayout(
-      vk::PipelineLayoutCreateInfo const&) const;
+      vk::PipelineLayoutCreateInfo const&,
+      std::vector<vk::DescriptorSetLayout> const&) const;
 
   vk::UniquePipelineCache CreatePipelineCache(
       vk::PipelineCacheCreateInfo const&) const;
@@ -89,11 +91,16 @@ class DeviceApi {
 
   vk::UniqueDescriptorPool CreateDescriptorPool() const;
 
-  std::vector<vk::UniqueImageView> CreateImageViews(
+  std::vector<vk::UniqueImageView> CreateSwapchainImageViews(
       vk::ComponentMapping const& componentMapping =
           defaults::framebuffer::ComponentMapping,
       vk::ImageSubresourceRange const& subResourceRange =
           defaults::framebuffer::SubResourceRange);
+
+  vk::UniqueImageView CreateImageView(
+      vk::Image const& image, vk::ImageViewType const viewType,
+      vk::Format const format, vk::ComponentMapping const& componentMapping,
+      vk::ImageSubresourceRange const& subResourceRange);
 
   Framebuffer CreateFramebuffer(vk::UniqueImageView&& imageView,
                                 vk::UniqueRenderPass const& renderPass,
@@ -117,11 +124,20 @@ class DeviceApi {
   vk::UniqueBuffer CreateBuffer(uint32_t const size,
                                 vk::BufferUsageFlags const usage) const;
 
+  vk::UniqueImage CreateImage(vk::ImageCreateInfo const& createInfo) const {
+    return device_->createImageUnique(createInfo);
+  }
+
   vk::MemoryRequirements GetBufferMemoryRequirements(
       vk::UniqueBuffer const& buffer) const;
 
   AllocationId AllocateMemory(vk::UniqueBuffer const& buffer,
                               vk::MemoryPropertyFlags const flags);
+
+  AllocationId AllocateMemory(vk::UniqueImage const& image,
+                              vk::MemoryPropertyFlags const flags) {
+    return allocator_.Allocate(image, flags, device_);
+  }
 
   void DeallocateMemory(AllocationId const id);
 
@@ -135,21 +151,26 @@ class DeviceApi {
 
   uint64_t GetMemoryOffset(uint32_t const id) const;
 
-  //   vk::UniqueDeviceMemory AllocateMemory(vk::DeviceSize const size,
-  //                                         uint32_t const typeIndex) const;
-
-  //   void DeallocateMemory(uint32_t const id) const;
-
-  //   void* MapMemory(vk::UniqueDeviceMemory const& memory,
-  //                   vk::DeviceSize const offset, vk::DeviceSize const size)
-  //                   const;
-
-  //   void UnmapMemory(vk::UniqueDeviceMemory const& memory) const;
+  //////////////////////////////////////////////////////////////////////////////
+  // Shader Data
+  //////////////////////////////////////////////////////////////////////////////
 
   std::vector<vk::UniqueDescriptorSet> AllocateDescriptorSet(
       vk::DescriptorSetLayout const& layout) const;
 
-  void UpdateDescriptorSet(vk::WriteDescriptorSet const& writeSet) const;
+  void UpdateDescriptorSet(
+      std::vector<vk::WriteDescriptorSet> const& writeSet) const;
+
+  vk::UniqueSampler CreateSampler(vk::SamplerCreateInfo const& createInfo) {
+    // TODO: tidy this up
+    auto createInfo2 = createInfo;
+    auto maxAnisotropy =
+        physicalDevice_.getProperties().limits.maxSamplerAnisotropy;
+    if (createInfo2.maxAnisotropy > maxAnisotropy) {
+      createInfo2.maxAnisotropy = maxAnisotropy;
+    }
+    return device_->createSamplerUnique(createInfo2);
+  }
 
  private:
   vk::PhysicalDevice physicalDevice_;

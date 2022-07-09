@@ -132,9 +132,13 @@ DeviceSpec::DeviceSpec(vk::PhysicalDevice const& device,
 DeviceFeatures DeviceSpec::GetFeatures() const {
   DeviceFeatures features = DeviceFeatures::NoFeatures;
 
-  auto DeviceFeatures2 = device_.getFeatures();
-  if (DeviceFeatures2.geometryShader) {
+  auto deviceFeatures = device_.getFeatures();
+  if (deviceFeatures.geometryShader) {
     features |= DeviceFeatures::GeometryShader;
+  }
+
+  if (deviceFeatures.samplerAnisotropy) {
+    features |= DeviceFeatures::Anisotropy;
   }
 
   return features;

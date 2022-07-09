@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "buffers/image_buffer.hpp"
 #include "buffers/vertex_buffer.hpp"
 #include "device_api.hpp"
 #include "queues.hpp"
@@ -12,24 +13,30 @@
 
 class Command {
  public:
+  // TODO: need to add some kind of priority
   void AddVertexBuffer(std::unique_ptr<Buffer>&& vertBuffer) {
     vertBuffers_.emplace_back(std::move(vertBuffer));
   }
 
   // TODO: Give ability to set a relative viewport and scissor
 
-  void Allocate(DeviceApi const& device, uint32_t const numFramebuffers) {
-    cmdBuffers_ = device.AllocateCommandBuffers(
-        vk::CommandBufferLevel::ePrimary, numFramebuffers);
+  void Initialise(DescriptorSetLayouts& descriptorSetLayouts,
+                  Queues const& queues, DeviceApi& device) {
+    if (!IsInitialised()) {
+      cmdBuffers_ = device.AllocateCommandBuffers(
+          vk::CommandBufferLevel::ePrimary, device.GetNumSwapchainImages());
+
+      for (auto& vertBuffer : vertBuffers_) {
+        vertBuffer->Initialise(descriptorSetLayouts, queues, device);
+      }
+    }
   }
 
-  void Record(
-      ImageIndex const imageIndex, vk::UniquePipeline const& pipeline,
-      vk::UniquePipelineLayout const& pipelineLayout,
-      vk::UniqueRenderPass const& renderPass, Framebuffer const& framebuffer,
-      std::unordered_map<vk::ShaderStageFlagBits,
-                         std::shared_ptr<UniformBuffer>>& uniformBuffers,
-      vk::Extent2D const& extent, Queues const& queues, DeviceApi& device) {
+  void Record(ImageIndex const imageIndex, vk::UniquePipeline const& pipeline,
+              vk::UniquePipelineLayout const& pipelineLayout,
+              vk::UniqueRenderPass const& renderPass,
+              Framebuffer const& framebuffer, vk::Extent2D const& extent,
+              Queues const& queues, DeviceApi& device) {
     assert(imageIndex < cmdBuffers_.size());
 
     auto& cmdBuffer = cmdBuffers_[imageIndex];
@@ -52,24 +59,17 @@ class Command {
                         static_cast<float>(extent.height), 0.0f, 1.0f));
     cmdBuffer->setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
 
-    for (auto& uniformBuffer : uniformBuffers) {
-      uniformBuffer.second->Bind(imageIndex, cmdBuffer, pipelineLayout);
-    }
-
     for (auto& vertBuffer : vertBuffers_) {
-      if (!vertBuffer->IsUploaded()) {
-        vertBuffer->Upload(queues, device);
-      }
-      vertBuffer->UpdateUniformBuffer(uniformBuffers, imageIndex, queues,
-                                      device);
-      vertBuffer->Record(cmdBuffer);
+      vertBuffer->UploadUniforms(imageIndex, queues, device);
+      vertBuffer->Bind(imageIndex, pipelineLayout, cmdBuffer);
+      vertBuffer->Draw(cmdBuffer);
     }
 
     cmdBuffer->endRenderPass();
     cmdBuffer->end();
   }
 
-  bool IsAllocated() { return !cmdBuffers_.empty(); }
+  bool IsInitialised() { return !cmdBuffers_.empty(); }
 
   void Unregister() { cmdBuffers_.clear(); }
 

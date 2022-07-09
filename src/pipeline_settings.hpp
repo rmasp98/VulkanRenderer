@@ -57,13 +57,7 @@ struct VulkanPipelineSettings {
     std::vector<Shader> shaders;
     for (auto& shaderDetails : Shaders) {
       shaders.push_back({shaderDetails.first, shaderDetails.second, device});
-      auto layout = shaders.back().GetLayout();
-      if (layout) {
-        DescriptorSetLayouts.push_back(layout);
-      }
     }
-    LayoutSettings.setSetLayouts(DescriptorSetLayouts);
-
     return shaders;
   }
 };

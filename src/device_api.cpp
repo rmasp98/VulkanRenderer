@@ -72,8 +72,11 @@ vk::UniqueDescriptorSetLayout DeviceApi::CreateDescriptorSetLayout(
 }
 
 vk::UniquePipelineLayout DeviceApi::CreatePipelineLayout(
-    vk::PipelineLayoutCreateInfo const& settings) const {
-  return device_->createPipelineLayoutUnique(settings);
+    vk::PipelineLayoutCreateInfo const& settings,
+    std::vector<vk::DescriptorSetLayout> const& layouts) const {
+  auto newSettings = settings;
+  newSettings.setSetLayouts(layouts);
+  return device_->createPipelineLayoutUnique(newSettings);
 }
 
 vk::UniquePipelineCache DeviceApi::CreatePipelineCache(
@@ -99,26 +102,35 @@ vk::UniquePipeline DeviceApi::CreatePipeline(
 }
 
 vk::UniqueDescriptorPool DeviceApi::CreateDescriptorPool() const {
-  auto descriptorSizes = vk::DescriptorPoolSize(
-      vk::DescriptorType::eUniformBuffer, GetNumSwapchainImages());
+  // TODO: move descriptor pools to pipeline. They should be created once the
+  // shader has been created
+  auto descriptorSizes = std::vector<vk::DescriptorPoolSize>(
+      {{vk::DescriptorType::eUniformBuffer, GetNumSwapchainImages()},
+       {vk::DescriptorType::eCombinedImageSampler, GetNumSwapchainImages()}});
+  // TODO: figure out a how to decide the number
   return device_->createDescriptorPoolUnique(
-      {vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-       GetNumSwapchainImages(), descriptorSizes});
+      {vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 1000,
+       descriptorSizes});
 }
 
-std::vector<vk::UniqueImageView> DeviceApi::CreateImageViews(
+std::vector<vk::UniqueImageView> DeviceApi::CreateSwapchainImageViews(
     vk::ComponentMapping const& componentMapping,
     vk::ImageSubresourceRange const& subResourceRange) {
   std::vector<vk::UniqueImageView> imageViews;
   for (auto& image : device_->getSwapchainImagesKHR(swapchain_.get())) {
-    imageViews.push_back(device_->createImageViewUnique({{},
-                                                         image,
-                                                         vk::ImageViewType::e2D,
-                                                         surfaceFormat_.format,
-                                                         componentMapping,
-                                                         subResourceRange}));
+    imageViews.push_back(CreateImageView(image, vk::ImageViewType::e2D,
+                                         surfaceFormat_.format,
+                                         componentMapping, subResourceRange));
   }
   return imageViews;
+}
+
+vk::UniqueImageView DeviceApi::CreateImageView(
+    vk::Image const& image, vk::ImageViewType const viewType,
+    vk::Format const format, vk::ComponentMapping const& componentMapping,
+    vk::ImageSubresourceRange const& subResourceRange) {
+  return device_->createImageViewUnique(
+      {{}, image, viewType, format, componentMapping, subResourceRange});
 }
 
 Framebuffer DeviceApi::CreateFramebuffer(vk::UniqueImageView&& imageView,
@@ -154,8 +166,7 @@ vk::UniqueBuffer DeviceApi::CreateBuffer(
 
 AllocationId DeviceApi::AllocateMemory(vk::UniqueBuffer const& buffer,
                                        vk::MemoryPropertyFlags const flags) {
-  return allocator_.Allocate(buffer, flags,
-                             physicalDevice_.getMemoryProperties(), device_);
+  return allocator_.Allocate(buffer, flags, device_);
 }
 
 void DeviceApi::DeallocateMemory(AllocationId const id) {
@@ -188,7 +199,7 @@ std::vector<vk::UniqueDescriptorSet> DeviceApi::AllocateDescriptorSet(
 }
 
 void DeviceApi::UpdateDescriptorSet(
-    vk::WriteDescriptorSet const& writeSet) const {
+    std::vector<vk::WriteDescriptorSet> const& writeSet) const {
   device_->updateDescriptorSets(writeSet, nullptr);
 }
 

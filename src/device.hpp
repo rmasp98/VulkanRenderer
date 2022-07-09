@@ -20,7 +20,7 @@ class Device {
         swapchainRecreateCallback_(swapchainRecreateCallback) {}
 
   std::shared_ptr<Pipeline> CreatePipeline(PipelineSettings const& settings) {
-    auto imageViews = api_.CreateImageViews();
+    auto imageViews = api_.CreateSwapchainImageViews();
     auto pipeline = std::make_shared<Pipeline>(settings, extent_,
                                                std::move(imageViews), api_);
     pipelines_.push_back(pipeline);
@@ -60,7 +60,7 @@ class Device {
     queues_.ResizeImagesInFlightFences(api_.GetNumSwapchainImages());
 
     for (auto& pipeline : pipelines_) {
-      auto imageViews = api_.CreateImageViews();
+      auto imageViews = api_.CreateSwapchainImageViews();
       pipeline->Recreate(std::move(imageViews), extent_, api_);
     }
   }

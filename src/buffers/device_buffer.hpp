@@ -1,5 +1,6 @@
 #pragma once
 
+#include "descriptor_sets.hpp"
 #include "device_api.hpp"
 #include "memory.hpp"
 #include "queues.hpp"
@@ -30,7 +31,8 @@ class DeviceBuffer {
         id_(device.AllocateMemory(buffer_, GetMemoryFlags(optimise))),
         size_(size),
         offset_(device.GetMemoryOffset(id_)),
-        optimise_(optimise) {}
+        optimise_(optimise),
+        bufferInfo_(buffer_.get(), 0, size_) {}
 
   void Upload(void const* data, Queues const& queues, DeviceApi& device) {
     if (optimise_) {
@@ -43,18 +45,12 @@ class DeviceBuffer {
     isOutdated_ = false;
   }
 
-  void UpdateDescriptorSet(vk::UniqueDescriptorSet const& descriptorSet,
-                           vk::DeviceSize const size, DeviceApi const& device) {
-    vk::DescriptorBufferInfo bufferInfo{buffer_.get(), 0, size};
-    vk::WriteDescriptorSet writeSet{descriptorSet.get(),
-                                    0,
-                                    0,
-                                    1,
-                                    vk::DescriptorType::eUniformBuffer,
-                                    nullptr,
-                                    &bufferInfo,
-                                    nullptr};
-    device.UpdateDescriptorSet(writeSet);
+  void AddDescriptorSetUpdate(
+      uint32_t const set, ImageIndex const imageIndex,
+      vk::WriteDescriptorSet& writeSet,
+      std::unique_ptr<DescriptorSets>& descriptorSets) const {
+    writeSet.setBufferInfo(bufferInfo_);
+    descriptorSets->AddUpdate(set, imageIndex, writeSet);
   }
 
   void SetOutdated() { isOutdated_ = true; }
@@ -75,6 +71,7 @@ class DeviceBuffer {
   uint32_t size_;
   uint32_t offset_;
   bool optimise_;
+  vk::DescriptorBufferInfo bufferInfo_;
 
   void TransferToOptimisedMemory(void const* data, Queues const& queues,
                                  DeviceApi& device) const {

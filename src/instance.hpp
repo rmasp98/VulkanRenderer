@@ -20,7 +20,8 @@ vk::UniqueInstance CreateInstance(std::vector<char const*>& layers,
 enum class DeviceFeatures : int {
   NoFeatures = 0,
   GeometryShader = 1 << 0,
-  PresentQueue = 1 << 1
+  PresentQueue = 1 << 1,
+  Anisotropy = 1 << 2,
 };
 
 DeviceFeatures operator|(DeviceFeatures lhs, DeviceFeatures rhs);
