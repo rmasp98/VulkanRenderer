@@ -21,8 +21,8 @@ class Device {
 
   std::shared_ptr<Pipeline> CreatePipeline(PipelineSettings const& settings) {
     auto imageViews = api_.CreateSwapchainImageViews();
-    auto pipeline = std::make_shared<Pipeline>(settings, extent_,
-                                               std::move(imageViews), api_);
+    auto pipeline = std::make_shared<Pipeline>(
+        settings, extent_, std::move(imageViews), queues_, api_);
     pipelines_.push_back(pipeline);
     return pipeline;
   }

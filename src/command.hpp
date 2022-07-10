@@ -43,9 +43,9 @@ class Command {
     cmdBuffer->reset();
     cmdBuffer->begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlags()));
 
-    std::array<vk::ClearValue, 1> clearValues;
-    clearValues[0].color =
-        vk::ClearColorValue(std::array<float, 4>({{0.2f, 0.2f, 0.2f, 0.2f}}));
+    std::array<vk::ClearValue, 2> clearValues{
+        vk::ClearColorValue(std::array<float, 4>{0.2f, 0.2f, 0.2f, 0.2f}),
+        vk::ClearDepthStencilValue(1.0f, 0)};
 
     cmdBuffer->beginRenderPass(
         {renderPass.get(), framebuffer.GetFramebuffer(),

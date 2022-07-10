@@ -3,7 +3,15 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/glfw/glfw
   GIT_TAG        3.3.5
 )
-FetchContent_MakeAvailable(glfw)
+
+FetchContent_Declare(
+    glm
+  GIT_REPOSITORY https://github.com/g-truc/glm.git
+  GIT_TAG        0.9.9.8
+)
+FetchContent_MakeAvailable(glfw glm)
+
+
 
 add_executable(VulkanTest
   main.cpp
@@ -25,5 +33,5 @@ target_include_directories(VulkanTest
         ${PROJECT_SOURCE_DIR}/src
 )
 
-target_link_libraries(VulkanTest VulkanRenderer glfw)
+target_link_libraries(VulkanTest VulkanRenderer glfw glm)
 target_compile_definitions(VulkanTest PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1)

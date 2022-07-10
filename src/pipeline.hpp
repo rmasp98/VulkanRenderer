@@ -12,21 +12,27 @@ class Pipeline {
  public:
   // TODO: should probably have the commandPool and descriptor pool here
   Pipeline(PipelineSettings const& settings, vk::Extent2D const& extent,
-           std::vector<vk::UniqueImageView>&& imageViews, DeviceApi& device)
+           std::vector<vk::UniqueImageView>&& imageViews, Queues const& queues,
+           DeviceApi& device)
       : settings_(settings.GetVulkanSettings()),
         shaders_(settings_.CreateShaders(device)),
         descriptorSetLayouts_(shaders_, device),
         layout_(device.CreatePipelineLayout(
             settings_.LayoutSettings, descriptorSetLayouts_.GetLayouts())),
-        renderPass_(
-            device.CreateRenderpass(settings_.GetRenderPassCreateInfo())),
+        depthBuffer_(
+            {vk::Extent3D{extent.width, extent.height, 1},
+             vk::ImageAspectFlagBits::eDepth, vk::Format::eD32SfloatS8Uint,
+             vk::ImageUsageFlagBits::eDepthStencilAttachment},
+            queues, device),
+        renderPass_(device.CreateRenderpass(settings_.GetRenderPassCreateInfo(
+            {device.GetSurfaceFormat(), depthBuffer_.GetFormat()}))),
         cache_(device.CreatePipelineCache({})),
         pipeline_(device.CreatePipeline(
             cache_, settings_.GetPipelineCreateInfo(GetShaderStages(), layout_,
                                                     renderPass_))),
         framebuffers_(device.CreateFramebuffers(
             std::forward<std::vector<vk::UniqueImageView>>(imageViews),
-            renderPass_, extent)) {}
+            depthBuffer_.GetImageView(), renderPass_, extent)) {}
 
   CommandId AddCommand(Command&& command) {
     // TODO: do this properly
@@ -55,13 +61,14 @@ class Pipeline {
 
   void Recreate(std::vector<vk::UniqueImageView>&& imageViews,
                 vk::Extent2D const& extent, DeviceApi const& device) {
-    renderPass_ = device.CreateRenderpass(settings_.GetRenderPassCreateInfo());
+    renderPass_ = device.CreateRenderpass(settings_.GetRenderPassCreateInfo(
+        {device.GetSurfaceFormat(), depthBuffer_.GetFormat()}));
     pipeline_ = device.CreatePipeline(
         cache_, settings_.GetPipelineCreateInfo(GetShaderStages(), layout_,
                                                 renderPass_));
     framebuffers_ = device.CreateFramebuffers(
-        std::forward<std::vector<vk::UniqueImageView>>(imageViews), renderPass_,
-        extent);
+        std::forward<std::vector<vk::UniqueImageView>>(imageViews),
+        depthBuffer_.GetImageView(), renderPass_, extent);
 
     for (auto& command : commands_) {
       command.second.Unregister();
@@ -73,6 +80,7 @@ class Pipeline {
   std::vector<Shader> shaders_;
   DescriptorSetLayouts descriptorSetLayouts_;
   vk::UniquePipelineLayout layout_;
+  ImageBuffer depthBuffer_;
   vk::UniqueRenderPass renderPass_;
   vk::UniquePipelineCache cache_;
   vk::UniquePipeline pipeline_;

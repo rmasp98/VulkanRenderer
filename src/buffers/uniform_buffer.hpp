@@ -93,8 +93,8 @@ class UniformImage : public Uniform {
   void Allocate(Queues const& queues, DeviceApi& device,
                 bool const force) override {
     if (force || imageBuffer_ == nullptr) {
-      imageBuffer_ = std::make_unique<ImageBuffer>(
-          properties_, queues.GetQueueFamilies().UniqueIndices(), device);
+      imageBuffer_ =
+          std::make_unique<SamplerImageBuffer>(properties_, queues, device);
     }
   }
 
@@ -124,5 +124,5 @@ class UniformImage : public Uniform {
   ImageProperties properties_;
   uint32_t binding_;
   uint32_t set_;
-  std::unique_ptr<ImageBuffer> imageBuffer_;
+  std::unique_ptr<SamplerImageBuffer> imageBuffer_;
 };

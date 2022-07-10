@@ -23,7 +23,7 @@ static inline vk::PipelineRasterizationStateCreateInfo const Rasterizer{
     false,
     vk::PolygonMode::eFill,
     vk::CullModeFlagBits::eBack,
-    vk::FrontFace::eClockwise,
+    vk::FrontFace::eCounterClockwise,
     false,
     0.0f,
     0.0f,
@@ -37,13 +37,15 @@ static inline vk::PipelineDepthStencilStateCreateInfo const DepthStencil{
     {},
     true,
     true,
-    vk::CompareOp::eLessOrEqual,
+    vk::CompareOp::eLess,
     false,
     false,
     {vk::StencilOp::eKeep, vk::StencilOp::eKeep, vk::StencilOp::eKeep,
      vk::CompareOp::eAlways},
     {vk::StencilOp::eKeep, vk::StencilOp::eKeep, vk::StencilOp::eKeep,
-     vk::CompareOp::eAlways}};
+     vk::CompareOp::eAlways},
+    0.0f,
+    1.0f};
 
 static inline vk::PipelineColorBlendAttachmentState const ColourBlendAttachment{
     false,
@@ -87,19 +89,34 @@ static inline vk::AttachmentDescription const ColourAttachment{
 static inline vk::AttachmentReference const ColourAttachmentRef{
     0, vk::ImageLayout::eColorAttachmentOptimal};
 
+static inline vk::AttachmentDescription const DepthAttachment{
+    {},
+    vk::Format::eUndefined,
+    vk::SampleCountFlagBits::e1,
+    vk::AttachmentLoadOp::eClear,
+    vk::AttachmentStoreOp::eDontCare,
+    vk::AttachmentLoadOp::eDontCare,
+    vk::AttachmentStoreOp::eDontCare,
+    vk::ImageLayout::eUndefined,
+    vk::ImageLayout::eDepthStencilAttachmentOptimal};
+
+static inline vk::AttachmentReference const DepthAttachmentRef{
+    1, vk::ImageLayout::eDepthStencilAttachmentOptimal};
+
 static inline vk::SubpassDescription const Subpass{
-    {}, vk::PipelineBindPoint::eGraphics,
-    {}, const_cast<vk::AttachmentReference&>(ColourAttachmentRef),
-    {}, nullptr};
+    {}, vk::PipelineBindPoint::eGraphics};
 
 // TODO: find out what these values are supposed to be
 static inline vk::SubpassDependency const Dependency{
     VK_SUBPASS_EXTERNAL,
     0,
-    vk::PipelineStageFlagBits::eColorAttachmentOutput,
-    vk::PipelineStageFlagBits::eColorAttachmentOutput,
+    vk::PipelineStageFlagBits::eColorAttachmentOutput |
+        vk::PipelineStageFlagBits::eEarlyFragmentTests,
+    vk::PipelineStageFlagBits::eColorAttachmentOutput |
+        vk::PipelineStageFlagBits::eEarlyFragmentTests,
     {},
-    vk::AccessFlagBits::eColorAttachmentWrite};
+    vk::AccessFlagBits::eColorAttachmentWrite |
+        vk::AccessFlagBits::eDepthStencilAttachmentWrite};
 
 }  // namespace pipeline
 

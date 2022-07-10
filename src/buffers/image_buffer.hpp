@@ -14,14 +14,16 @@ vk::PipelineStageFlags GetDestinationStage(
 
 struct ImageProperties {
   vk::Extent3D Extent;
-  vk::ImageType Type = vk::ImageType::e2D;
+  vk::ImageAspectFlagBits Aspect = vk::ImageAspectFlagBits::eColor;
   vk::Format Format = vk::Format::eR8G8B8A8Srgb;
+  vk::ImageUsageFlags Usage =
+      vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
+  vk::ImageType Type = vk::ImageType::e2D;
   vk::ImageLayout Layout = vk::ImageLayout::eShaderReadOnlyOptimal;
   uint32_t MipLevels = 1;
   uint32_t ArrayLayers = 1;
   vk::SampleCountFlagBits SampleCount = vk::SampleCountFlagBits::e1;
   vk::ImageTiling Tiling = vk::ImageTiling::eOptimal;
-  vk::SamplerCreateInfo test;
   vk::Filter MagFilter = vk::Filter::eLinear;
   vk::Filter MinFilter = vk::Filter::eLinear;
   vk::SamplerAddressMode UAddressMode = vk::SamplerAddressMode::eRepeat;
@@ -40,47 +42,43 @@ struct ImageProperties {
 
 class ImageBuffer {
  public:
-  ImageBuffer(ImageProperties const& properties,
-              std::vector<uint32_t> const& queueFamilyIndices,
+  ImageBuffer(ImageProperties const& properties, Queues const& queues,
               DeviceApi& device)
       : size_{properties.Extent.width * properties.Extent.height *
               properties.Extent.depth * 4},
-        image_(device.CreateImage({{},
-                                   properties.Type,
-                                   properties.Format,
-                                   properties.Extent,
-                                   properties.MipLevels,
-                                   properties.ArrayLayers,
-                                   properties.SampleCount,
-                                   properties.Tiling,
-                                   vk::ImageUsageFlagBits::eTransferDst |
-                                       vk::ImageUsageFlagBits::eSampled,
-                                   vk::SharingMode::eExclusive,
-                                   queueFamilyIndices})),
+        properties_(properties),
+        image_(device.CreateImage(
+            {
+                {},
+                properties.Type,
+                properties.Format,
+                properties.Extent,
+                properties.MipLevels,
+                properties.ArrayLayers,
+                properties.SampleCount,
+                properties.Tiling,
+                properties.Usage,
+                vk::SharingMode::eExclusive,
+            },
+            queues.GetQueueFamilies().UniqueIndices())),
         id_(device.AllocateMemory(image_,
                                   vk::MemoryPropertyFlagBits::eDeviceLocal)),
-        imageView_(device.CreateImageView(
-            image_.get(), vk::ImageViewType::e2D, properties.Format, {},
-            {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1})),
-        sampler_(
-            device.CreateSampler({{},
-                                  properties.MagFilter,
-                                  properties.MinFilter,
-                                  vk::SamplerMipmapMode::eNearest,
-                                  properties.UAddressMode,
-                                  properties.VAddressMode,
-                                  properties.WAddressMode,
-                                  properties.MipLodBias,
-                                  properties.MaxAnisotropy >= 0.0f,
-                                  properties.MaxAnisotropy,
-                                  properties.CompareOp != vk::CompareOp::eNever,
-                                  properties.CompareOp,
-                                  properties.MinLod,
-                                  properties.MaxLod,
-                                  properties.BorderColour,
-                                  properties.UnnormaliseCoordinates})),
+        imageView_(device.CreateImageView(image_.get(), vk::ImageViewType::e2D,
+                                          properties.Format, {},
+                                          {properties.Aspect, 0, 1, 0, 1})) {
+    if (properties_.Aspect == vk::ImageAspectFlagBits::eDepth) {
+      auto cmdBuffer =
+          device.AllocateCommandBuffers(vk::CommandBufferLevel::ePrimary, 1);
+      cmdBuffer[0]->begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+      transitionImageLayout(
+          image_, properties_.Format, vk::ImageLayout::eUndefined,
+          vk::ImageLayout::eDepthStencilAttachmentOptimal, cmdBuffer[0]);
+      cmdBuffer[0]->end();
 
-        imageInfo_(sampler_.get(), imageView_.get(), properties.Layout) {}
+      queues.SubmitToGraphics(cmdBuffer[0]);
+      queues.GraphicsWaitIdle();
+    }
+  }
 
   void Upload(std::vector<unsigned char> data, vk::Extent3D const extent,
               Queues const& queues, DeviceApi& device) {
@@ -121,24 +119,19 @@ class ImageBuffer {
     isOutdated_ = false;
   }
 
-  void AddDescriptorSetUpdate(uint32_t const set, ImageIndex const imageIndex,
-                              vk::WriteDescriptorSet& writeSet,
-                              std::unique_ptr<DescriptorSets>& descriptorSets) {
-    writeSet.setImageInfo(imageInfo_);
-    descriptorSets->AddUpdate(set, imageIndex, writeSet);
-  }
+  vk::UniqueImageView const& GetImageView() { return imageView_; }
+  vk::Format GetFormat() { return properties_.Format; }
 
   void SetOutdated() { isOutdated_ = true; }
   bool IsOutdated() { return isOutdated_; }
 
  private:
   uint32_t size_;
+  ImageProperties properties_;
   vk::UniqueImage image_;
   AllocationId id_;
   vk::UniqueImageView imageView_;
-  vk::UniqueSampler sampler_;
   bool isOutdated_ = true;
-  vk::DescriptorImageInfo imageInfo_;
 
   void transitionImageLayout(vk::UniqueImage const& image,
                              vk::Format const format,
@@ -164,6 +157,52 @@ class ImageBuffer {
                                GetDestinationStage(destinationLayout), {},
                                nullptr, nullptr, imageMemoryBarrier);
   }
+};
+
+class SamplerImageBuffer {
+ public:
+  SamplerImageBuffer(ImageProperties const& properties, Queues const& queues,
+                     DeviceApi& device)
+      : imageBuffer_(properties, queues, device),
+        sampler_(
+            device.CreateSampler({{},
+                                  properties.MagFilter,
+                                  properties.MinFilter,
+                                  vk::SamplerMipmapMode::eNearest,
+                                  properties.UAddressMode,
+                                  properties.VAddressMode,
+                                  properties.WAddressMode,
+                                  properties.MipLodBias,
+                                  properties.MaxAnisotropy >= 0.0f,
+                                  properties.MaxAnisotropy,
+                                  properties.CompareOp != vk::CompareOp::eNever,
+                                  properties.CompareOp,
+                                  properties.MinLod,
+                                  properties.MaxLod,
+                                  properties.BorderColour,
+                                  properties.UnnormaliseCoordinates})),
+        imageInfo_(sampler_.get(), imageBuffer_.GetImageView().get(),
+                   properties.Layout) {}
+
+  void AddDescriptorSetUpdate(uint32_t const set, ImageIndex const imageIndex,
+                              vk::WriteDescriptorSet& writeSet,
+                              std::unique_ptr<DescriptorSets>& descriptorSets) {
+    writeSet.setImageInfo(imageInfo_);
+    descriptorSets->AddUpdate(set, imageIndex, writeSet);
+  }
+
+  void Upload(std::vector<unsigned char> data, vk::Extent3D const extent,
+              Queues const& queues, DeviceApi& device) {
+    imageBuffer_.Upload(data, extent, queues, device);
+  }
+
+  void SetOutdated() { imageBuffer_.SetOutdated(); }
+  bool IsOutdated() { return imageBuffer_.IsOutdated(); }
+
+ private:
+  ImageBuffer imageBuffer_;
+  vk::UniqueSampler sampler_;
+  vk::DescriptorImageInfo imageInfo_;
 };
 
 inline vk::AccessFlags GetSourceAccessMask(vk::ImageLayout const sourceLayout) {

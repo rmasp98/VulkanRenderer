@@ -13,7 +13,6 @@ using SetBindingsMap =
 
 struct ShaderDetails {
   std::vector<char> FileContents;
-  std::vector<vk::DescriptorSetLayoutBinding> Bindings;
 };
 
 inline SetBindingsMap GetBindingsFromShader(
@@ -21,11 +20,11 @@ inline SetBindingsMap GetBindingsFromShader(
 
 class Shader {
  public:
-  Shader(vk::ShaderStageFlagBits const type, ShaderDetails const& details,
-         DeviceApi& device)
+  Shader(vk::ShaderStageFlagBits const type,
+         std::vector<char> const& fileContents, DeviceApi& device)
       : type_(type),
-        module_(device.CreateShaderModule(details.FileContents)),
-        setBindings_(GetBindingsFromShader(type, details.FileContents)) {}
+        module_(device.CreateShaderModule(fileContents)),
+        setBindings_(GetBindingsFromShader(type, fileContents)) {}
 
   vk::PipelineShaderStageCreateInfo GetStage() const {
     return {{}, type_, module_.get(), "main"};

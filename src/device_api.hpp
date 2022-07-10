@@ -40,6 +40,7 @@ class DeviceApi {
   vk::UniqueSwapchainKHR const& GetSwapchain() { return swapchain_; }
 
   uint32_t GetNumSwapchainImages() const;
+  vk::Format GetSurfaceFormat() const { return surfaceFormat_.format; }
 
   ImageIndex GetNextImageIndex(vk::Semaphore const& semaphore);
 
@@ -103,11 +104,13 @@ class DeviceApi {
       vk::ImageSubresourceRange const& subResourceRange);
 
   Framebuffer CreateFramebuffer(vk::UniqueImageView&& imageView,
+                                vk::UniqueImageView const& depthBufferView,
                                 vk::UniqueRenderPass const& renderPass,
                                 vk::Extent2D const& extent) const;
 
   std::vector<Framebuffer> CreateFramebuffers(
       std::vector<vk::UniqueImageView>&& imageViews,
+      vk::UniqueImageView const& depthBufferView,
       vk::UniqueRenderPass const& renderPass, vk::Extent2D const& extent) const;
 
   //////////////////////////////////////////////////////////////////////////////
@@ -124,7 +127,10 @@ class DeviceApi {
   vk::UniqueBuffer CreateBuffer(uint32_t const size,
                                 vk::BufferUsageFlags const usage) const;
 
-  vk::UniqueImage CreateImage(vk::ImageCreateInfo const& createInfo) const {
+  vk::UniqueImage CreateImage(
+      vk::ImageCreateInfo&& createInfo,
+      std::vector<uint32_t> const& queueFamilyIndices) const {
+    createInfo.setQueueFamilyIndices(queueFamilyIndices);
     return device_->createImageUnique(createInfo);
   }
 

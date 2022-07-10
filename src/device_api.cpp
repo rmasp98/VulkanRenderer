@@ -86,11 +86,7 @@ vk::UniquePipelineCache DeviceApi::CreatePipelineCache(
 
 vk::UniqueRenderPass DeviceApi::CreateRenderpass(
     vk::RenderPassCreateInfo const& settings) const {
-  auto attachments = *settings.pAttachments;
-  attachments.format = surfaceFormat_.format;
-  auto updateSetting{settings};
-  updateSetting.setAttachments(attachments);
-  return device_->createRenderPassUnique(updateSetting);
+  return device_->createRenderPassUnique(settings);
 }
 
 vk::UniquePipeline DeviceApi::CreatePipeline(
@@ -133,21 +129,24 @@ vk::UniqueImageView DeviceApi::CreateImageView(
       {{}, image, viewType, format, componentMapping, subResourceRange});
 }
 
-Framebuffer DeviceApi::CreateFramebuffer(vk::UniqueImageView&& imageView,
-                                         vk::UniqueRenderPass const& renderPass,
-                                         vk::Extent2D const& extent) const {
+Framebuffer DeviceApi::CreateFramebuffer(
+    vk::UniqueImageView&& imageView, vk::UniqueImageView const& depthBufferView,
+    vk::UniqueRenderPass const& renderPass, vk::Extent2D const& extent) const {
+  std::vector<vk::ImageView> attachments{imageView.get(),
+                                         depthBufferView.get()};
   auto framebuffer = device_->createFramebufferUnique(
-      {{}, renderPass.get(), imageView.get(), extent.width, extent.height, 1});
+      {{}, renderPass.get(), attachments, extent.width, extent.height, 1});
   return {std::move(imageView), std::move(framebuffer)};
 }
 
 std::vector<Framebuffer> DeviceApi::CreateFramebuffers(
     std::vector<vk::UniqueImageView>&& imageViews,
+    vk::UniqueImageView const& depthBufferView,
     vk::UniqueRenderPass const& renderPass, vk::Extent2D const& extent) const {
   std::vector<Framebuffer> framebuffers;
   for (auto& imageView : imageViews) {
-    framebuffers.push_back(
-        CreateFramebuffer(std::move(imageView), renderPass, extent));
+    framebuffers.push_back(CreateFramebuffer(
+        std::move(imageView), depthBufferView, renderPass, extent));
   }
 
   return framebuffers;

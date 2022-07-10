@@ -47,6 +47,22 @@ struct UVVertex2D {
   }
 };
 
+struct UVColouredVertex3D {
+  float Vertex[3];  // location 0
+  float Colour[3];  // location 1
+  float UV[2];      // location 2
+
+  static std::vector<vk::VertexInputAttributeDescription> GetAttributeDetails(
+      uint32_t binding) {
+    return {{0, binding, vk::Format::eR32G32B32Sfloat,
+             offsetof(UVColouredVertex3D, Vertex)},
+            {1, binding, vk::Format::eR32G32B32Sfloat,
+             offsetof(UVColouredVertex3D, Colour)},
+            {2, binding, vk::Format::eR32G32Sfloat,
+             offsetof(UVColouredVertex3D, UV)}};
+  }
+};
+
 template <class T>
 class VertexBuffer : public Buffer {
  public:

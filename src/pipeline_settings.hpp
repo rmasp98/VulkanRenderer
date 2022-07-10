@@ -21,17 +21,23 @@ struct VulkanPipelineSettings {
   // Layout
   vk::PipelineLayoutCreateInfo LayoutSettings;
   // RenderPass
-  vk::AttachmentDescription ColourAttachment;
+  std::vector<vk::AttachmentDescription> RenderPassAttachments;
+  vk::AttachmentReference ColourAttachmentRef;
+  vk::AttachmentReference DepthAttachmentRef;
   vk::SubpassDescription Subpass;
   vk::SubpassDependency Dependency;
-  vk::AttachmentReference ColourAttachmentRef;
-  std::unordered_map<vk::ShaderStageFlagBits, ShaderDetails> Shaders;
+  std::unordered_map<vk::ShaderStageFlagBits, std::vector<char>> Shaders;
   std::vector<vk::DescriptorSetLayout> DescriptorSetLayouts;
   std::vector<vk::VertexInputAttributeDescription> AttributeDescriptions;
   std::vector<vk::VertexInputBindingDescription> BindingDescriptons;
 
-  vk::RenderPassCreateInfo GetRenderPassCreateInfo() const {
-    return {{}, ColourAttachment, Subpass, Dependency};
+  vk::RenderPassCreateInfo GetRenderPassCreateInfo(
+      std::vector<vk::Format> imageFormats) {
+    assert(imageFormats.size() == RenderPassAttachments.size());
+    for (uint32_t i = 0; i < imageFormats.size(); ++i) {
+      RenderPassAttachments[i].format = imageFormats[i];
+    }
+    return {{}, RenderPassAttachments, Subpass, Dependency};
   }
 
   vk::GraphicsPipelineCreateInfo GetPipelineCreateInfo(
@@ -53,7 +59,7 @@ struct VulkanPipelineSettings {
             renderPass.get()};
   }
 
-  std::vector<Shader> CreateShaders(DeviceApi& device) {
+  std::vector<Shader> CreateShaders(DeviceApi& device) const {
     std::vector<Shader> shaders;
     for (auto& shaderDetails : Shaders) {
       shaders.push_back({shaderDetails.first, shaderDetails.second, device});
@@ -65,7 +71,8 @@ struct VulkanPipelineSettings {
 class PipelineSettings {
  public:
   explicit PipelineSettings(
-      std::unordered_map<vk::ShaderStageFlagBits, ShaderDetails> const& shaders)
+      std::unordered_map<vk::ShaderStageFlagBits, std::vector<char>> const&
+          shaders)
       : shaders_(shaders) {
     // TODO: assert that at least vertex and fragment shader are here?
   }
@@ -94,10 +101,12 @@ class PipelineSettings {
         defaults::pipeline::DynamicStates,
         defaults::pipeline::DynamicState,
         defaults::pipeline::LayoutCreateInfo,
-        defaults::pipeline::ColourAttachment,
+        {defaults::pipeline::ColourAttachment,
+         defaults::pipeline::DepthAttachment},
+        defaults::pipeline::ColourAttachmentRef,
+        defaults::pipeline::DepthAttachmentRef,
         defaults::pipeline::Subpass,
         defaults::pipeline::Dependency,
-        defaults::pipeline::ColourAttachmentRef,
         shaders_,
         {},
         attributeDescriptions_,
@@ -111,12 +120,13 @@ class PipelineSettings {
     };
 
     settings.Subpass.setColorAttachments(settings.ColourAttachmentRef);
+    settings.Subpass.setPDepthStencilAttachment(&settings.DepthAttachmentRef);
 
     return settings;
   }
 
  private:
-  std::unordered_map<vk::ShaderStageFlagBits, ShaderDetails> shaders_;
+  std::unordered_map<vk::ShaderStageFlagBits, std::vector<char>> shaders_;
   std::vector<vk::VertexInputAttributeDescription> attributeDescriptions_;
   std::vector<vk::VertexInputBindingDescription> bindingDescriptons_;
 };
