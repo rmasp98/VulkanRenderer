@@ -89,6 +89,20 @@ static inline vk::AttachmentDescription const ColourAttachment{
 static inline vk::AttachmentReference const ColourAttachmentRef{
     0, vk::ImageLayout::eColorAttachmentOptimal};
 
+static inline vk::AttachmentDescription const ColourResolveAttachment{
+    {},
+    vk::Format::eUndefined,
+    vk::SampleCountFlagBits::e1,
+    vk::AttachmentLoadOp::eDontCare,
+    vk::AttachmentStoreOp::eStore,
+    vk::AttachmentLoadOp::eDontCare,
+    vk::AttachmentStoreOp::eDontCare,
+    vk::ImageLayout::eUndefined,
+    vk::ImageLayout::ePresentSrcKHR};
+
+static inline vk::AttachmentReference const ColourResolveAttachmentRef{
+    2, vk::ImageLayout::eColorAttachmentOptimal};
+
 static inline vk::AttachmentDescription const DepthAttachment{
     {},
     vk::Format::eUndefined,

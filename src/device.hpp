@@ -10,11 +10,13 @@
 class Device {
  public:
   Device(vk::PhysicalDevice const& physicalDevice,
+         vk::PhysicalDeviceFeatures const* features,
          QueueFamilies const& queueFamilies,
          vk::UniqueSurfaceKHR const& surface, vk::Extent2D extent,
          vk::SurfaceFormatKHR const& surfaceFormat,
          std::function<void()> const swapchainRecreateCallback)
-      : api_(physicalDevice, queueFamilies, surface, surfaceFormat, extent),
+      : api_(physicalDevice, features, queueFamilies, surface, surfaceFormat,
+             extent),
         extent_(extent),
         queues_(api_, queueFamilies, api_.GetNumSwapchainImages()),
         swapchainRecreateCallback_(swapchainRecreateCallback) {}
@@ -61,7 +63,7 @@ class Device {
 
     for (auto& pipeline : pipelines_) {
       auto imageViews = api_.CreateSwapchainImageViews();
-      pipeline->Recreate(std::move(imageViews), extent_, api_);
+      pipeline->Recreate(std::move(imageViews), extent_, queues_, api_);
     }
   }
 

@@ -6,22 +6,6 @@
 #include "uniform_buffer.hpp"
 #include "vulkan/vulkan.hpp"
 
-class Buffer {
- public:
-  virtual ~Buffer() = default;
-  virtual void AddUniform(std::shared_ptr<Uniform> const&) = 0;
-
-  virtual void Initialise(DescriptorSetLayouts&, Queues const&, DeviceApi&,
-                          bool force = false) = 0;
-
-  virtual void Upload(Queues const&, DeviceApi&) = 0;
-  virtual void UploadUniforms(ImageIndex const, Queues const&, DeviceApi&) = 0;
-
-  virtual void Bind(ImageIndex const, vk::UniquePipelineLayout const&,
-                    vk::UniqueCommandBuffer const&) const = 0;
-  virtual void Draw(vk::UniqueCommandBuffer const&) const = 0;
-};
-
 struct ColouredVertex2D {
   float Vertex[2];  // location 0
   float Colour[3];  // location 1
@@ -48,9 +32,9 @@ struct UVVertex2D {
 };
 
 struct UVColouredVertex3D {
-  float Vertex[3];  // location 0
-  float Colour[3];  // location 1
-  float UV[2];      // location 2
+  std::array<float, 3> Vertex;  // location 0
+  std::array<float, 3> Colour;  // location 1
+  std::array<float, 2> UV;      // location 2
 
   static std::vector<vk::VertexInputAttributeDescription> GetAttributeDetails(
       uint32_t binding) {
@@ -61,6 +45,24 @@ struct UVColouredVertex3D {
             {2, binding, vk::Format::eR32G32Sfloat,
              offsetof(UVColouredVertex3D, UV)}};
   }
+
+  auto operator<=>(UVColouredVertex3D const& rhs) const = default;
+};
+
+class Buffer {
+ public:
+  virtual ~Buffer() = default;
+  virtual void AddUniform(std::shared_ptr<Uniform> const&) = 0;
+
+  virtual void Initialise(DescriptorSetLayouts&, Queues const&, DeviceApi&,
+                          bool force = false) = 0;
+
+  virtual void Upload(Queues const&, DeviceApi&) = 0;
+  virtual void UploadUniforms(ImageIndex const, Queues const&, DeviceApi&) = 0;
+
+  virtual void Bind(ImageIndex const, vk::UniquePipelineLayout const&,
+                    vk::UniqueCommandBuffer const&) const = 0;
+  virtual void Draw(vk::UniqueCommandBuffer const&) const = 0;
 };
 
 template <class T>
@@ -76,9 +78,9 @@ class VertexBuffer : public Buffer {
   void Initialise(DescriptorSetLayouts& descriptorSetLayouts,
                   Queues const& queues, DeviceApi& device, bool force) {
     if (force || deviceBuffer_ == nullptr) {
-      deviceBuffer_ = std::make_unique<DeviceBuffer>(
+      deviceBuffer_ = std::make_unique<OptimisedDeviceBuffer>(
           data_.size() * sizeof(T), vk::BufferUsageFlagBits::eVertexBuffer,
-          true, device);
+          device);
       Upload(queues, device);
 
       descriptorSets_ = descriptorSetLayouts.CreateDescriptorSets(device);
@@ -113,7 +115,7 @@ class VertexBuffer : public Buffer {
             vk::UniquePipelineLayout const& pipelineLayout,
             vk::UniqueCommandBuffer const& cmdBuffer) const override {
     if (deviceBuffer_ && descriptorSets_) {
-      deviceBuffer_->Bind(cmdBuffer);
+      deviceBuffer_->BindVertex(cmdBuffer);
       descriptorSets_->Bind(imageIndex, cmdBuffer, pipelineLayout);
     }
   }
@@ -124,7 +126,7 @@ class VertexBuffer : public Buffer {
 
  private:
   std::vector<T> const data_;
-  std::unique_ptr<DeviceBuffer> deviceBuffer_;
+  std::unique_ptr<OptimisedDeviceBuffer> deviceBuffer_;
   std::vector<std::shared_ptr<Uniform>> uniforms_;
   std::unique_ptr<DescriptorSets> descriptorSets_;
 };
@@ -132,7 +134,7 @@ class VertexBuffer : public Buffer {
 template <class T>
 class IndexBuffer : public Buffer {
  public:
-  IndexBuffer(std::vector<T> const& data, std::vector<uint16_t> const& indices)
+  IndexBuffer(std::vector<T> const& data, std::vector<uint32_t> const& indices)
       : vertexBuffer_(data), indices_(indices) {}
 
   virtual void AddUniform(std::shared_ptr<Uniform> const& uniform) override {
@@ -143,9 +145,9 @@ class IndexBuffer : public Buffer {
                   Queues const& queues, DeviceApi& device, bool force) {
     vertexBuffer_.Initialise(descriptorSetLayouts, queues, device, force);
     if (force || deviceBuffer_ == nullptr) {
-      deviceBuffer_ = std::make_unique<DeviceBuffer>(
-          indices_.size() * sizeof(uint16_t),
-          vk::BufferUsageFlagBits::eIndexBuffer, true, device);
+      deviceBuffer_ = std::make_unique<OptimisedDeviceBuffer>(
+          indices_.size() * sizeof(uint32_t),
+          vk::BufferUsageFlagBits::eIndexBuffer, device);
       Upload(queues, device);
     }
   }
@@ -177,6 +179,6 @@ class IndexBuffer : public Buffer {
 
  private:
   VertexBuffer<T> vertexBuffer_;
-  std::vector<uint16_t> indices_;
-  std::unique_ptr<DeviceBuffer> deviceBuffer_;
+  std::vector<uint32_t> indices_;
+  std::unique_ptr<OptimisedDeviceBuffer> deviceBuffer_;
 };

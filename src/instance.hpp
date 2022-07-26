@@ -22,6 +22,7 @@ enum class DeviceFeatures : int {
   GeometryShader = 1 << 0,
   PresentQueue = 1 << 1,
   Anisotropy = 1 << 2,
+  SampleShading = 1 << 3,
 };
 
 DeviceFeatures operator|(DeviceFeatures lhs, DeviceFeatures rhs);
@@ -31,9 +32,14 @@ DeviceFeatures operator&(DeviceFeatures lhs, DeviceFeatures rhs);
 class DeviceSpec {
  public:
   DeviceSpec(vk::PhysicalDevice const& device,
-             vk::UniqueSurfaceKHR const& surface);
+             vk::UniqueSurfaceKHR const& surface,
+             DeviceFeatures const requiredFeatures);
 
-  DeviceFeatures GetFeatures() const;
+  bool HasRequiredFeatures() const {
+    return requiredFeatures_ == (requiredFeatures_ & GetAvailableFeatures());
+  }
+
+  DeviceFeatures GetAvailableFeatures() const;
   int GetScore() const { return score_; }
 
   std::shared_ptr<Device> CreateDevice(
@@ -47,10 +53,14 @@ class DeviceSpec {
 
   std::size_t Hash() const { return std::hash<vk::PhysicalDevice>()(device_); }
 
+ protected:
+  vk::PhysicalDeviceFeatures GetFeatures() const;
+
  private:
   vk::PhysicalDevice device_;
   vk::SurfaceFormatKHR surfaceFormat_;
   class QueueFamilies queueFamilies_;
+  DeviceFeatures requiredFeatures_;
   int score_;
 };
 

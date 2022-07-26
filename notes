@@ -1,3 +1,14 @@
 TODO:
  - memory manangement working on buffer uploads
- - get index buffer working
+ - Push constants
+ - Instanced rendering
+ - Dynamic uniforms
+ - Separate images and sampler descriptors
+ - Pipeline cache
+ - Multi-threaded command buffer generation
+ - Multiple subpasses
+ - Compute shaders
+ - Blinn-Phong lighting
+ - post-processing effects
+ - shadow mapping
+

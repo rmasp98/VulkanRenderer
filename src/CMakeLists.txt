@@ -1,6 +1,7 @@
 add_library(VulkanRenderer
     instance.cpp
     device_api.cpp 
+    buffers/device_buffer.cpp
 )
 
 set_target_properties(VulkanRenderer

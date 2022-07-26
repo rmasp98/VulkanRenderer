@@ -35,6 +35,7 @@ class Command {
   void Record(ImageIndex const imageIndex, vk::UniquePipeline const& pipeline,
               vk::UniquePipelineLayout const& pipelineLayout,
               vk::UniqueRenderPass const& renderPass,
+              std::vector<vk::ClearValue> clearValues,
               Framebuffer const& framebuffer, vk::Extent2D const& extent,
               Queues const& queues, DeviceApi& device) {
     assert(imageIndex < cmdBuffers_.size());
@@ -42,10 +43,6 @@ class Command {
     auto& cmdBuffer = cmdBuffers_[imageIndex];
     cmdBuffer->reset();
     cmdBuffer->begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlags()));
-
-    std::array<vk::ClearValue, 2> clearValues{
-        vk::ClearColorValue(std::array<float, 4>{0.2f, 0.2f, 0.2f, 0.2f}),
-        vk::ClearDepthStencilValue(1.0f, 0)};
 
     cmdBuffer->beginRenderPass(
         {renderPass.get(), framebuffer.GetFramebuffer(),

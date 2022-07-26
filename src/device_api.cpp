@@ -13,6 +13,25 @@ uint32_t DeviceApi::GetNumSwapchainImages() const {
   return device_->getSwapchainImagesKHR(swapchain_.get()).size();
 }
 
+vk::Format DeviceApi::GetDepthBufferFormat(
+    vk::ImageTiling tiling, vk::FormatFeatureFlags features) const {
+  std::vector<vk::Format> candidateFormats{vk::Format::eD32Sfloat,
+                                           vk::Format::eD32SfloatS8Uint,
+                                           vk::Format::eD24UnormS8Uint};
+  for (auto format : candidateFormats) {
+    vk::FormatProperties props = physicalDevice_.getFormatProperties(format);
+
+    if (tiling == vk::ImageTiling::eLinear &&
+        (props.linearTilingFeatures & features) == features) {
+      return format;
+    } else if (tiling == vk::ImageTiling::eOptimal &&
+               (props.optimalTilingFeatures & features) == features) {
+      return format;
+    }
+  }
+  throw std::runtime_error("failed to find supported format!");
+}
+
 ImageIndex DeviceApi::GetNextImageIndex(vk::Semaphore const& semaphore) {
   uint32_t imageIndex;
   auto result = device_->acquireNextImageKHR(swapchain_.get(), UINT64_MAX,
@@ -27,6 +46,26 @@ ImageIndex DeviceApi::GetNextImageIndex(vk::Semaphore const& semaphore) {
 vk::Queue DeviceApi::GetQueue(uint32_t const queueFamily,
                               uint32_t const queueIndex) const {
   return device_->getQueue(queueFamily, queueIndex);
+}
+
+vk::SampleCountFlagBits DeviceApi::GetMaxMultiSamplingCount() const {
+  auto properties = physicalDevice_.getProperties();
+  auto sampleCount = properties.limits.framebufferColorSampleCounts &
+                     properties.limits.framebufferDepthSampleCounts;
+  if (sampleCount & vk::SampleCountFlagBits::e64)
+    return vk::SampleCountFlagBits::e64;
+  else if (sampleCount & vk::SampleCountFlagBits::e32)
+    return vk::SampleCountFlagBits::e32;
+  else if (sampleCount & vk::SampleCountFlagBits::e16)
+    return vk::SampleCountFlagBits::e16;
+  else if (sampleCount & vk::SampleCountFlagBits::e8)
+    return vk::SampleCountFlagBits::e8;
+  else if (sampleCount & vk::SampleCountFlagBits::e4)
+    return vk::SampleCountFlagBits::e4;
+  else if (sampleCount & vk::SampleCountFlagBits::e2)
+    return vk::SampleCountFlagBits::e2;
+
+  return vk::SampleCountFlagBits::e1;
 }
 
 vk::UniqueSemaphore DeviceApi::CreateSemaphore(
@@ -130,10 +169,15 @@ vk::UniqueImageView DeviceApi::CreateImageView(
 }
 
 Framebuffer DeviceApi::CreateFramebuffer(
-    vk::UniqueImageView&& imageView, vk::UniqueImageView const& depthBufferView,
+    vk::UniqueImageView&& imageView,
+    std::vector<vk::ImageView> const& attachmentViews,
     vk::UniqueRenderPass const& renderPass, vk::Extent2D const& extent) const {
-  std::vector<vk::ImageView> attachments{imageView.get(),
-                                         depthBufferView.get()};
+  // Order of attachments must follow attachmentIndex in CreateRenderPass
+  std::vector<vk::ImageView> attachments;
+  attachments.push_back(imageView.get());
+  attachments.insert(attachments.end(), attachmentViews.begin(),
+                     attachmentViews.end());
+
   auto framebuffer = device_->createFramebufferUnique(
       {{}, renderPass.get(), attachments, extent.width, extent.height, 1});
   return {std::move(imageView), std::move(framebuffer)};
@@ -141,12 +185,12 @@ Framebuffer DeviceApi::CreateFramebuffer(
 
 std::vector<Framebuffer> DeviceApi::CreateFramebuffers(
     std::vector<vk::UniqueImageView>&& imageViews,
-    vk::UniqueImageView const& depthBufferView,
+    std::vector<vk::ImageView> const& attachmentViews,
     vk::UniqueRenderPass const& renderPass, vk::Extent2D const& extent) const {
   std::vector<Framebuffer> framebuffers;
   for (auto& imageView : imageViews) {
     framebuffers.push_back(CreateFramebuffer(
-        std::move(imageView), depthBufferView, renderPass, extent));
+        std::move(imageView), attachmentViews, renderPass, extent));
   }
 
   return framebuffers;
@@ -163,13 +207,13 @@ vk::UniqueBuffer DeviceApi::CreateBuffer(
   return device_->createBufferUnique({{}, size, usage});
 }
 
-AllocationId DeviceApi::AllocateMemory(vk::UniqueBuffer const& buffer,
-                                       vk::MemoryPropertyFlags const flags) {
+Allocation DeviceApi::AllocateMemory(vk::UniqueBuffer const& buffer,
+                                     vk::MemoryPropertyFlags const flags) {
   return allocator_.Allocate(buffer, flags, device_);
 }
 
-void DeviceApi::DeallocateMemory(AllocationId const id) {
-  allocator_.Deallocate(id);
+void DeviceApi::DeallocateMemory(Allocation const& allocation) {
+  allocator_.Deallocate(allocation);
 }
 
 void DeviceApi::BindBufferMemory(vk::UniqueBuffer const& buffer,
@@ -178,16 +222,16 @@ void DeviceApi::BindBufferMemory(vk::UniqueBuffer const& buffer,
   device_->bindBufferMemory(buffer.get(), memory.get(), offset);
 }
 
-void* DeviceApi::MapMemory(AllocationId const id) const {
-  return allocator_.MapMemory(id, device_);
+void* DeviceApi::MapMemory(Allocation const& allocation) const {
+  return allocator_.MapMemory(allocation, device_);
 }
 
-void DeviceApi::UnmapMemory(AllocationId const id) const {
-  allocator_.UnmapMemory(id, device_);
+void DeviceApi::UnmapMemory(Allocation const& allocation) const {
+  allocator_.UnmapMemory(allocation, device_);
 }
 
-uint64_t DeviceApi::GetMemoryOffset(AllocationId const id) const {
-  return allocator_.GetOffset(id);
+uint64_t DeviceApi::GetMemoryOffset(Allocation const& allocation) const {
+  return allocator_.GetOffset(allocation);
 }
 
 std::vector<vk::UniqueDescriptorSet> DeviceApi::AllocateDescriptorSet(
@@ -234,7 +278,7 @@ vk::UniqueDevice CreateVulkanDevice(
     vk::PhysicalDevice const& physicalDevice,
     std::vector<uint32_t> const& queueFamilyIndices,
     std::vector<char const*> const& extensions,
-    vk::PhysicalDeviceFeatures const* physicalDeviceFeatures) {
+    vk::PhysicalDeviceFeatures const* features) {
   std::vector<vk::DeviceQueueCreateInfo> deviceQueueCreateInfos;
   float queuePriority = 1.0f;
   for (auto const& queueFamilyIndex : queueFamilyIndices) {
@@ -242,7 +286,7 @@ vk::UniqueDevice CreateVulkanDevice(
   }
 
   return physicalDevice.createDeviceUnique(
-      {{}, deviceQueueCreateInfos, {}, extensions, physicalDeviceFeatures});
+      {{}, deviceQueueCreateInfos, {}, extensions, features});
 }
 
 // TODO: Move to a utils file if needed elsewhere

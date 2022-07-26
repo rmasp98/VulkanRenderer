@@ -2,9 +2,9 @@
 
 #include <set>
 
+#include "defaults.hpp"
 #include "device_api.hpp"
 #include "vulkan/vulkan.hpp"
-#include "vulkan_defaults.hpp"
 
 class Queues {
  public:

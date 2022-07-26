@@ -9,9 +9,8 @@ std::vector<DeviceSpec> Instance::GetSuitableDevices(
     DeviceFeatures const requiredFeatures) const {
   std::vector<DeviceSpec> devices;
   for (auto const& physicalDevice : instance_->enumeratePhysicalDevices()) {
-    DeviceSpec const device{physicalDevice, surface_};
-    if (requiredFeatures == (requiredFeatures & device.GetFeatures()) &&
-        device.GetScore() >= 0) {
+    DeviceSpec const device{physicalDevice, surface_, requiredFeatures};
+    if (device.HasRequiredFeatures() && device.GetScore() >= 0) {
       devices.push_back(std::move(device));
     }
   }
@@ -118,18 +117,36 @@ int GetDeviceScore(vk::PhysicalDevice const& device,
     score += 1000;
   }
 
+  auto sampleCount = properties.limits.framebufferColorSampleCounts &
+                     properties.limits.framebufferDepthSampleCounts;
+  // TODO: decide multiplier for this property
+  if (sampleCount & vk::SampleCountFlagBits::e64)
+    score += 64 * 10;
+  else if (sampleCount & vk::SampleCountFlagBits::e32)
+    score += 32 * 10;
+  else if (sampleCount & vk::SampleCountFlagBits::e16)
+    score += 16 * 10;
+  else if (sampleCount & vk::SampleCountFlagBits::e8)
+    score += 8 * 10;
+  else if (sampleCount & vk::SampleCountFlagBits::e4)
+    score += 4 * 10;
+  else if (sampleCount & vk::SampleCountFlagBits::e2)
+    score += 2 * 10;
+
   return score;
 }
 
 DeviceSpec::DeviceSpec(vk::PhysicalDevice const& device,
-                       vk::UniqueSurfaceKHR const& surface)
-    : device_(device), queueFamilies_(device, surface) {
-  surfaceFormat_ = GetSurfaceFormat(device, surface);
-  score_ = GetDeviceScore(device_, surfaceFormat_, queueFamilies_);
-}
+                       vk::UniqueSurfaceKHR const& surface,
+                       DeviceFeatures const requiredFeatures)
+    : device_(device),
+      surfaceFormat_(GetSurfaceFormat(device, surface)),
+      queueFamilies_(device, surface),
+      requiredFeatures_(requiredFeatures),
+      score_(GetDeviceScore(device_, surfaceFormat_, queueFamilies_)) {}
 
 // TODO: add all other intesting features
-DeviceFeatures DeviceSpec::GetFeatures() const {
+DeviceFeatures DeviceSpec::GetAvailableFeatures() const {
   DeviceFeatures features = DeviceFeatures::NoFeatures;
 
   auto deviceFeatures = device_.getFeatures();
@@ -141,14 +158,30 @@ DeviceFeatures DeviceSpec::GetFeatures() const {
     features |= DeviceFeatures::Anisotropy;
   }
 
+  if (deviceFeatures.sampleRateShading) {
+    features |= DeviceFeatures::SampleShading;
+  }
+
+  return features;
+}
+
+vk::PhysicalDeviceFeatures DeviceSpec::GetFeatures() const {
+  vk::PhysicalDeviceFeatures features;
+  if (DeviceFeatures::SampleShading ==
+      (requiredFeatures_ & DeviceFeatures::SampleShading)) {
+    features.sampleRateShading = true;
+  }
+
   return features;
 }
 
 std::shared_ptr<Device> DeviceSpec::CreateDevice(
     vk::UniqueSurfaceKHR const& surface, vk::Extent2D& extent,
     std::function<void()> const swapchainRecreateCallback) const {
-  return std::make_shared<Device>(device_, queueFamilies_, surface, extent,
-                                  surfaceFormat_, swapchainRecreateCallback);
+  auto features = GetFeatures();
+  return std::make_shared<Device>(device_, &features, queueFamilies_, surface,
+                                  extent, surfaceFormat_,
+                                  swapchainRecreateCallback);
 }
 
 DeviceFeatures operator|(DeviceFeatures lhs, DeviceFeatures rhs) {

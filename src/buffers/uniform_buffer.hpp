@@ -43,9 +43,8 @@ class UniformBuffer : public Uniform {
                 bool const force) override {
     if (force || deviceBuffers_.size() == 0) {
       for (uint32_t i = 0; i < device.GetNumSwapchainImages(); ++i) {
-        deviceBuffers_.push_back({sizeof(T),
-                                  vk::BufferUsageFlagBits::eUniformBuffer,
-                                  false, device});
+        deviceBuffers_.emplace_back(
+            sizeof(T), vk::BufferUsageFlagBits::eUniformBuffer, device);
       }
     }
   }
@@ -104,7 +103,7 @@ class UniformImage : public Uniform {
               DeviceApi& device) override {
     assert(imageBuffer_);
     if (imageBuffer_->IsOutdated()) {
-      imageBuffer_->Upload(data_, properties_.Extent, queues, device);
+      imageBuffer_->Upload(data_, queues, device);
     }
   }
 
