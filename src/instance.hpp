@@ -1,4 +1,5 @@
-#pragma once
+#ifndef VULKAN_RENDERER_INSTANCE_HPP
+#define VULKAN_RENDERER_INSTANCE_HPP
 
 #include <iostream>
 
@@ -13,9 +14,7 @@
 #define ENGINE_VERSION 1
 #define VULKAN_API_VERSION VK_API_VERSION_1_1
 
-vk::UniqueInstance CreateInstance(std::vector<char const*>& layers,
-                                  std::vector<char const*>& extensions,
-                                  DebugMessenger const& debugMessenger);
+namespace vulkan_renderer {
 
 enum class DeviceFeatures : int {
   NoFeatures = 0,
@@ -64,11 +63,21 @@ class DeviceSpec {
   int score_;
 };
 
+}  // namespace vulkan_renderer
+
 // Needed for DeviceSpec to be key of an unordered map
 template <>
-struct std::hash<DeviceSpec> {
-  std::size_t operator()(DeviceSpec const& spec) const { return spec.Hash(); }
+struct std::hash<vulkan_renderer::DeviceSpec> {
+  std::size_t operator()(vulkan_renderer::DeviceSpec const& spec) const {
+    return spec.Hash();
+  }
 };
+
+namespace vulkan_renderer {
+
+vk::UniqueInstance CreateInstance(std::vector<char const*>& layers,
+                                  std::vector<char const*>& extensions,
+                                  DebugMessenger const& debugMessenger);
 
 class Instance {
  public:
@@ -112,3 +121,7 @@ class Instance {
   vk::Extent2D extent_;
   std::unordered_map<DeviceSpec, std::shared_ptr<Device>> devices_;
 };
+
+}  // namespace vulkan_renderer
+
+#endif

@@ -3,6 +3,8 @@
 
 #include <limits>
 
+namespace vulkan_renderer {
+
 void DeviceApi::RecreateSwapchain(vk::UniqueSurfaceKHR const& surface,
                                   vk::Extent2D& extent,
                                   QueueFamilies const& queueFamilies) {
@@ -111,11 +113,8 @@ vk::UniqueDescriptorSetLayout DeviceApi::CreateDescriptorSetLayout(
 }
 
 vk::UniquePipelineLayout DeviceApi::CreatePipelineLayout(
-    vk::PipelineLayoutCreateInfo const& settings,
-    std::vector<vk::DescriptorSetLayout> const& layouts) const {
-  auto newSettings = settings;
-  newSettings.setSetLayouts(layouts);
-  return device_->createPipelineLayoutUnique(newSettings);
+    vk::PipelineLayoutCreateInfo const& settings) const {
+  return device_->createPipelineLayoutUnique(settings);
 }
 
 vk::UniquePipelineCache DeviceApi::CreatePipelineCache(
@@ -355,3 +354,5 @@ vk::PresentModeKHR SelectPresentMode(vk::PhysicalDevice const& device,
 }
 
 ///////////////////////////////////////////////////////////////////////////
+
+}

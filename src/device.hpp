@@ -1,4 +1,5 @@
-#pragma once
+#ifndef VULKAN_RENDERER_DEVICE_HPP
+#define VULKAN_RENDERER_DEVICE_HPP
 
 #include <memory>
 #include <vector>
@@ -6,6 +7,8 @@
 #include "device_api.hpp"
 #include "pipeline.hpp"
 #include "queues.hpp"
+
+namespace vulkan_renderer {
 
 class Device {
  public:
@@ -76,3 +79,7 @@ class Device {
   std::vector<std::shared_ptr<class Pipeline>> pipelines_;
   std::function<void()> swapchainRecreateCallback_;
 };
+
+}  // namespace vulkan_renderer
+
+#endif

@@ -1,6 +1,5 @@
 TODO:
  - memory manangement working on buffer uploads
- - Push constants
  - Instanced rendering
  - Dynamic uniforms
  - Separate images and sampler descriptors

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef VULKAN_RENDERER_DEVICE_API_HPP
+#define VULKAN_RENDERER_DEVICE_API_HPP
 
 #include <vector>
 
@@ -7,6 +8,8 @@
 #include "memory.hpp"
 #include "utils.hpp"
 #include "vulkan/vulkan.hpp"
+
+namespace vulkan_renderer {
 
 vk::UniqueDevice CreateVulkanDevice(
     vk::PhysicalDevice const& physicalDevice,
@@ -98,8 +101,7 @@ class DeviceApi {
   // Pipeline Creation
   ////////////////////////////////////////////////////////////////////////
   vk::UniquePipelineLayout CreatePipelineLayout(
-      vk::PipelineLayoutCreateInfo const&,
-      std::vector<vk::DescriptorSetLayout> const&) const;
+      vk::PipelineLayoutCreateInfo const&) const;
 
   vk::UniquePipelineCache CreatePipelineCache(
       vk::PipelineCacheCreateInfo const&) const;
@@ -226,3 +228,7 @@ vk::CompositeAlphaFlagBitsKHR SelectCompositeAlpha(
 
 vk::PresentModeKHR SelectPresentMode(vk::PhysicalDevice const& device,
                                      vk::UniqueSurfaceKHR const& surface);
+
+}  // namespace vulkan_renderer
+
+#endif

@@ -47,23 +47,26 @@ struct std::hash<Vertex> {
 int main() {
   auto window = Window("test", 800, 500);
 
-  Instance instance(window);
-  auto device = instance.GetDevice(DeviceFeatures::SampleShading);
+  vulkan_renderer::Instance instance(window);
+  auto device =
+      instance.GetDevice(vulkan_renderer::DeviceFeatures::SampleShading);
 
   std::unordered_map<vk::ShaderStageFlagBits, std::vector<char>> shaders{
       {vk::ShaderStageFlagBits::eVertex,
-       {LoadShader("../../shaders/vert.spv")}},
+       {vulkan_renderer::LoadShader("../../shaders/vert.spv")}},
       {vk::ShaderStageFlagBits::eFragment,
-       {LoadShader("../../shaders/frag.spv")}}};
+       {vulkan_renderer::LoadShader("../../shaders/frag.spv")}}};
 
-  PipelineSettings pipelineSettings{
+  vulkan_renderer::PipelineSettings pipelineSettings{
       .Shaders = shaders,
       .Multisampling = {{}, vk::SampleCountFlagBits::e64, true, 0.2f}};
   pipelineSettings.AddVertexLayout<Vertex>();
   auto pipeline = device->CreatePipeline(pipelineSettings);
 
-  auto uniformBuffer = std::make_shared<UniformBuffer<MVP>>(
-      MVP{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}, 0);
+  auto pushConstant =
+      std::make_shared<vulkan_renderer::PushConstantData<vulkan_renderer::MVP>>(
+          vulkan_renderer::MVP{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
+          vk::ShaderStageFlagBits::eVertex, 0);
 
   tinyobj::attrib_t attrib;
   std::vector<tinyobj::shape_t> shapes;
@@ -96,8 +99,8 @@ int main() {
     }
   }
 
-  std::unique_ptr<Buffer> mesh =
-      std::make_unique<IndexBuffer<Vertex>>(vertices, indices);
+  std::unique_ptr<vulkan_renderer::Buffer> mesh =
+      std::make_unique<vulkan_renderer::IndexBuffer<Vertex>>(vertices, indices);
 
   int texWidth, texHeight, texChannels;
   stbi_uc* pixels = stbi_load("../../test/viking_room.png", &texWidth,
@@ -110,20 +113,21 @@ int main() {
     throw std::runtime_error("Could not read image file: ");
   }
 
-  auto imageData = std::make_shared<UniformImage>(
+  auto imageData = std::make_shared<vulkan_renderer::UniformImage>(
       pixelVector,
-      ImageProperties{.Extent = {static_cast<uint32_t>(texWidth),
-                                 static_cast<uint32_t>(texHeight), 1},
-                      .MipLevels = 10,
-                      .MinLod = 5.0f,
-                      .MaxLod = 10.0f,
-                      .MipMapMode = vk::SamplerMipmapMode::eLinear},
+      vulkan_renderer::ImageProperties{
+          .Extent = {static_cast<uint32_t>(texWidth),
+                     static_cast<uint32_t>(texHeight), 1},
+          .MipLevels = 10,
+          .MinLod = 5.0f,
+          .MaxLod = 10.0f,
+          .MipMapMode = vk::SamplerMipmapMode::eLinear},
       1);
 
-  mesh->AddUniform(uniformBuffer);
+  mesh->AddPushConstant(pushConstant);
   mesh->AddUniform(imageData);
 
-  Command command;
+  vulkan_renderer::Command command;
   command.AddVertexBuffer(std::move(mesh));
   auto commandId = pipeline->AddCommand(std::move(command));
 
@@ -143,7 +147,7 @@ int main() {
                              glm::vec3(0.0f, 0.0f, 1.0f));
 
     auto mvp = proj * view * model;
-    uniformBuffer->Update(*reinterpret_cast<MVP*>(&mvp));
+    pushConstant->Update(*reinterpret_cast<vulkan_renderer::MVP*>(&mvp));
 
     // Force 60 FPS
     auto waittime = (1.0f / 60.0f) - (glfwGetTime() - time);

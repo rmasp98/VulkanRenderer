@@ -1,9 +1,12 @@
-#pragma once
+#ifndef VULKAN_RENDERER_QUEUE_FAMILIES_HPP
+#define VULKAN_RENDERER_QUEUE_FAMILIES_HPP
 
 #include <set>
 #include <vector>
 
 #include "vulkan/vulkan.hpp"
+
+namespace vulkan_renderer {
 
 class QueueFamilies {
  public:
@@ -43,3 +46,7 @@ class QueueFamilies {
   int graphics_ = -1;
   int present_ = -1;
 };
+
+}  // namespace vulkan_renderer
+
+#endif

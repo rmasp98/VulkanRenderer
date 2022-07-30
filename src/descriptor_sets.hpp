@@ -1,8 +1,11 @@
-#pragma once
+#ifndef VULKAN_RENDERER_DESCRIPTOR_SETS_HPP
+#define VULKAN_RENDERER_DESCRIPTOR_SETS_HPP
 
 #include "device_api.hpp"
 #include "queues.hpp"
 #include "shader.hpp"
+
+namespace vulkan_renderer {
 
 inline SetBindingsMap GetCombinedBindingsFromShaders(
     std::vector<Shader> const& shaders) {
@@ -112,3 +115,7 @@ class DescriptorSetLayouts {
  private:
   std::unordered_map<uint32_t, DescriptorSetLayout> setLayouts_;
 };
+
+}  // namespace vulkan_renderer
+
+#endif

@@ -1,6 +1,9 @@
-#pragma once
+#ifndef VULKAN_RENDERER_FRAMEBUFFER_HPP
+#define VULKAN_RENDERER_FRAMEBUFFER_HPP
 
 #include "vulkan/vulkan.hpp"
+
+namespace vulkan_renderer {
 
 class Framebuffer {
  public:
@@ -21,3 +24,7 @@ class Framebuffer {
   vk::UniqueImageView imageView_;
   vk::UniqueFramebuffer framebuffer_;
 };
+
+}  // namespace vulkan_renderer
+
+#endif

@@ -1,7 +1,10 @@
-#pragma once
+#ifndef VULKAN_RENDERER_IMAGE_PROPERTIES_HPP
+#define VULKAN_RENDERER_IMAGE_PROPERTIES_HPP
 
 #include "device_api.hpp"
 #include "vulkan/vulkan.hpp"
+
+namespace vulkan_renderer {
 
 struct ImageProperties {
   // Main properties
@@ -51,3 +54,7 @@ inline ImageProperties ValidateImageProperties(
   }
   return validProperties;
 }
+
+}  // namespace vulkan_renderer
+
+#endif

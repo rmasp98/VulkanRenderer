@@ -1,10 +1,13 @@
-#pragma once
+#ifndef VULKAN_RENDERER_DEVICE_BUFFER_HPP
+#define VULKAN_RENDERER_DEVICE_BUFFER_HPP
 
 #include "descriptor_sets.hpp"
 #include "device_api.hpp"
 #include "image_properties.hpp"
 #include "memory.hpp"
 #include "queues.hpp"
+
+namespace vulkan_renderer {
 
 class DeviceBuffer {
  public:
@@ -92,3 +95,7 @@ void TransitionImageLayout(vk::UniqueImage const&, uint32_t const mipLevel,
 
 void GenerateMipMaps(vk::UniqueImage const&, ImageProperties const&,
                      vk::UniqueCommandBuffer const&);
+
+}  // namespace vulkan_renderer
+
+#endif

@@ -1,5 +1,5 @@
-
-#pragma once
+#ifndef VULKAN_RENDERER_DEBUG_HPP
+#define VULKAN_RENDERER_DEBUG_HPP
 
 #include "vulkan/vulkan.hpp"
 
@@ -8,6 +8,8 @@
 #else
 #define DEBUG_DEFAULT_ENABLE false
 #endif
+
+namespace vulkan_renderer {
 
 class DebugMessenger {
  public:
@@ -62,3 +64,7 @@ class DebugMessenger {
     return VK_FALSE;
   }
 };
+
+}  // namespace vulkan_renderer
+
+#endif

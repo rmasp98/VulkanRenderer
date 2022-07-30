@@ -1,4 +1,5 @@
-#pragma once
+#ifndef VULKAN_RENDERER_IMAGE_BUFFER_HPP
+#define VULKAN_RENDERER_IMAGE_BUFFER_HPP
 
 #include "descriptor_sets.hpp"
 #include "device_api.hpp"
@@ -6,6 +7,8 @@
 #include "image_properties.hpp"
 #include "queues.hpp"
 #include "vulkan/vulkan.hpp"
+
+namespace vulkan_renderer {
 
 class ImageBuffer {
  public:
@@ -125,3 +128,7 @@ class DepthBuffer : public ImageBuffer {
 
   vk::Format GetFormat() { return GetProperties().Format; }
 };
+
+}  // namespace vulkan_renderer
+
+#endif

@@ -1,10 +1,13 @@
-#pragma once
+#ifndef VULKAN_RENDERER_PIPELINE_SETTINGS_HPP
+#define VULKAN_RENDERER_PIPELINE_SETTINGS_HPP
 
 #include <unordered_map>
 
 #include "defaults.hpp"
 #include "shader.hpp"
 #include "vulkan/vulkan.hpp"
+
+namespace vulkan_renderer {
 
 struct PipelineSettings {
   std::unordered_map<vk::ShaderStageFlagBits, std::vector<char>> Shaders;
@@ -60,6 +63,14 @@ struct PipelineSettings {
     attributeDescriptions_.insert(attributeDescriptions_.end(),
                                   attrDesc.begin(), attrDesc.end());
     bindingDescriptons_.push_back({binding, sizeof(VertexStruct)});
+  }
+
+  vk::PipelineLayoutCreateInfo GetPipelineLayoutCreateInfo(
+      std::vector<vk::DescriptorSetLayout> const& layouts,
+      std::vector<vk::PushConstantRange> pushConstants) {
+    LayoutSettings.setSetLayouts(layouts);
+    LayoutSettings.setPushConstantRanges(pushConstants);
+    return LayoutSettings;
   }
 
   std::vector<ImageBuffer> CreateAttachmentBuffers(vk::Extent2D const& extent,
@@ -165,3 +176,7 @@ struct PipelineSettings {
     return shaders;
   }
 };
+
+}  // namespace vulkan_renderer
+
+#endif

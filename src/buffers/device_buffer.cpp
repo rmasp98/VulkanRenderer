@@ -1,5 +1,7 @@
 #include "device_buffer.hpp"
 
+namespace vulkan_renderer {
+
 void DeviceBuffer::Upload(void const* data, Queues const&, DeviceApi& device) {
   auto memoryLocation = device.MapMemory(allocation_);
   memcpy(memoryLocation, data, size_);
@@ -202,4 +204,6 @@ void GenerateMipMaps(vk::UniqueImage const& image,
   TransitionImageLayout(image, properties.MipLevels - 1, 1, properties.Format,
                         vk::ImageLayout::eTransferDstOptimal, properties.Layout,
                         cmdBuffer);
+}
+
 }

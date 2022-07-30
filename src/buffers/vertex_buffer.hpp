@@ -1,10 +1,13 @@
-#pragma once
+#ifndef VULKAN_RENDERER_VERTEX_BUFFER_HPP
+#define VULKAN_RENDERER_VERTEX_BUFFER_HPP
 
 #include "device_api.hpp"
 #include "device_buffer.hpp"
 #include "queues.hpp"
 #include "uniform_buffer.hpp"
 #include "vulkan/vulkan.hpp"
+
+namespace vulkan_renderer {
 
 struct ColouredVertex2D {
   float Vertex[2];  // location 0
@@ -53,12 +56,15 @@ class Buffer {
  public:
   virtual ~Buffer() = default;
   virtual void AddUniform(std::shared_ptr<Uniform> const&) = 0;
+  virtual void AddPushConstant(std::shared_ptr<PushConstant> const&) = 0;
 
   virtual void Initialise(DescriptorSetLayouts&, Queues const&, DeviceApi&,
                           bool force = false) = 0;
 
   virtual void Upload(Queues const&, DeviceApi&) = 0;
   virtual void UploadUniforms(ImageIndex const, Queues const&, DeviceApi&) = 0;
+  virtual void UploadPushConstants(vk::UniquePipelineLayout const&,
+                                   vk::UniqueCommandBuffer const&) = 0;
 
   virtual void Bind(ImageIndex const, vk::UniquePipelineLayout const&,
                     vk::UniqueCommandBuffer const&) const = 0;
@@ -73,6 +79,12 @@ class VertexBuffer : public Buffer {
   void AddUniform(std::shared_ptr<Uniform> const& uniform) override {
     // TODO: Check to see if set/binding already exists
     uniforms_.push_back(uniform);
+  }
+
+  void AddPushConstant(
+      std::shared_ptr<PushConstant> const& pushConstant) override {
+    // TODO: Check to see if set/binding already exists
+    pushConstants_.push_back(pushConstant);
   }
 
   void Initialise(DescriptorSetLayouts& descriptorSetLayouts,
@@ -111,6 +123,13 @@ class VertexBuffer : public Buffer {
     }
   }
 
+  void UploadPushConstants(vk::UniquePipelineLayout const& layout,
+                           vk::UniqueCommandBuffer const& cmdBuffer) override {
+    for (auto& pushConstant : pushConstants_) {
+      pushConstant->Upload(layout, cmdBuffer);
+    }
+  }
+
   void Bind(ImageIndex const imageIndex,
             vk::UniquePipelineLayout const& pipelineLayout,
             vk::UniqueCommandBuffer const& cmdBuffer) const override {
@@ -128,6 +147,7 @@ class VertexBuffer : public Buffer {
   std::vector<T> const data_;
   std::unique_ptr<OptimisedDeviceBuffer> deviceBuffer_;
   std::vector<std::shared_ptr<Uniform>> uniforms_;
+  std::vector<std::shared_ptr<PushConstant>> pushConstants_;
   std::unique_ptr<DescriptorSets> descriptorSets_;
 };
 
@@ -139,6 +159,11 @@ class IndexBuffer : public Buffer {
 
   virtual void AddUniform(std::shared_ptr<Uniform> const& uniform) override {
     vertexBuffer_.AddUniform(uniform);
+  }
+
+  void AddPushConstant(
+      std::shared_ptr<PushConstant> const& pushConstant) override {
+    vertexBuffer_.AddPushConstant(pushConstant);
   }
 
   void Initialise(DescriptorSetLayouts& descriptorSetLayouts,
@@ -164,6 +189,11 @@ class IndexBuffer : public Buffer {
     vertexBuffer_.UploadUniforms(imageIndex, queues, device);
   }
 
+  void UploadPushConstants(vk::UniquePipelineLayout const& layout,
+                           vk::UniqueCommandBuffer const& cmdBuffer) override {
+    vertexBuffer_.UploadPushConstants(layout, cmdBuffer);
+  }
+
   virtual void Bind(ImageIndex const imageIndex,
                     vk::UniquePipelineLayout const& pipelineLayout,
                     vk::UniqueCommandBuffer const& cmdBuffer) const override {
@@ -182,3 +212,7 @@ class IndexBuffer : public Buffer {
   std::vector<uint32_t> indices_;
   std::unique_ptr<OptimisedDeviceBuffer> deviceBuffer_;
 };
+
+}  // namespace vulkan_renderer
+
+#endif

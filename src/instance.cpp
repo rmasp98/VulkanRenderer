@@ -5,6 +5,8 @@
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
+namespace vulkan_renderer {
+
 std::vector<DeviceSpec> Instance::GetSuitableDevices(
     DeviceFeatures const requiredFeatures) const {
   std::vector<DeviceSpec> devices;
@@ -201,4 +203,6 @@ DeviceFeatures operator&(DeviceFeatures lhs, DeviceFeatures rhs) {
   return static_cast<DeviceFeatures>(
       static_cast<std::underlying_type<DeviceFeatures>::type>(lhs) &
       static_cast<std::underlying_type<DeviceFeatures>::type>(rhs));
+}
+
 }

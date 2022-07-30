@@ -1,4 +1,5 @@
-#pragma once
+#ifndef VULKAN_RENDERER_MEMORY_HPP
+#define VULKAN_RENDERER_MEMORY_HPP
 
 #include <atomic>
 #include <iostream>
@@ -6,6 +7,8 @@
 #include <unordered_map>
 
 #include "vulkan/vulkan.hpp"
+
+namespace vulkan_renderer {
 
 struct MemoryMetaData {
   vk::UniqueDeviceMemory Memory;
@@ -130,3 +133,7 @@ class MemoryAllocator {
   std::map<uint32_t, MemoryMetaData> allocations_;
   std::atomic<uint32_t> currentId_;
 };
+
+}  // namespace vulkan_renderer
+
+#endif

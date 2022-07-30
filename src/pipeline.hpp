@@ -1,10 +1,13 @@
-#pragma once
+#ifndef VULKAN_RENDERER_PIPELINE_HPP
+#define VULKAN_RENDERER_PIPELINE_HPP
 
 #include "command.hpp"
 #include "device_api.hpp"
 #include "framebuffer.hpp"
 #include "pipeline_settings.hpp"
 #include "shader.hpp"
+
+namespace vulkan_renderer {
 
 using CommandId = uint32_t;
 
@@ -17,8 +20,9 @@ class Pipeline {
       : settings_(settings),
         shaders_(settings_.CreateShaders(device)),
         descriptorSetLayouts_(shaders_, device),
-        layout_(device.CreatePipelineLayout(
-            settings_.LayoutSettings, descriptorSetLayouts_.GetLayouts())),
+        layout_(
+            device.CreatePipelineLayout(settings_.GetPipelineLayoutCreateInfo(
+                descriptorSetLayouts_.GetLayouts(), GetPushConstants()))),
         attachmentBuffers_(
             settings_.CreateAttachmentBuffers(extent, queues, device)),
         renderPass_(device.CreateRenderpass(
@@ -103,4 +107,18 @@ class Pipeline {
     }
     return imageViews;
   }
+
+  std::vector<vk::PushConstantRange> GetPushConstants() const {
+    std::vector<vk::PushConstantRange> pushConstants;
+    for (auto const& shader : shaders_) {
+      auto shaderPushConstants = shader.GetPushConstants();
+      pushConstants.insert(pushConstants.end(), shaderPushConstants.begin(),
+                           shaderPushConstants.end());
+    }
+    return pushConstants;
+  }
 };
+
+}  // namespace vulkan_renderer
+
+#endif

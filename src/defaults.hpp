@@ -1,8 +1,9 @@
-#pragma once
+#ifndef VULKAN_RENDERER_DEFAULTS_HPP
+#define VULKAN_RENDERER_DEFAULTS_HPP
 
 #include "vulkan/vulkan.hpp"
 
-namespace defaults {
+namespace vulkan_renderer::defaults {
 
 static inline uint32_t const MaxFramesInFlight = 10;
 
@@ -146,4 +147,6 @@ static inline vk::ImageSubresourceRange SubResourceRange(
 
 }  // namespace framebuffer
 
-}  // namespace defaults
+}  // namespace vulkan_renderer::defaults
+
+#endif

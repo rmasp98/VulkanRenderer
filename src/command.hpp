@@ -1,4 +1,5 @@
-#pragma once
+#ifndef VULKAN_RENDERER_COMMAND_HPP
+#define VULKAN_RENDERER_COMMAND_HPP
 
 #include <memory>
 #include <string>
@@ -11,6 +12,8 @@
 #include "queues.hpp"
 #include "vulkan/vulkan.hpp"
 
+namespace vulkan_renderer {
+
 class Command {
  public:
   // TODO: need to add some kind of priority
@@ -19,7 +22,6 @@ class Command {
   }
 
   // TODO: Give ability to set a relative viewport and scissor
-
   void Initialise(DescriptorSetLayouts& descriptorSetLayouts,
                   Queues const& queues, DeviceApi& device) {
     if (!IsInitialised()) {
@@ -51,6 +53,7 @@ class Command {
 
     cmdBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.get());
 
+    // TODO: this should probably be set per vertBuffer
     cmdBuffer->setViewport(
         0, vk::Viewport(0.0f, 0.0f, static_cast<float>(extent.width),
                         static_cast<float>(extent.height), 0.0f, 1.0f));
@@ -58,6 +61,7 @@ class Command {
 
     for (auto& vertBuffer : vertBuffers_) {
       vertBuffer->UploadUniforms(imageIndex, queues, device);
+      vertBuffer->UploadPushConstants(pipelineLayout, cmdBuffer);
       vertBuffer->Bind(imageIndex, pipelineLayout, cmdBuffer);
       vertBuffer->Draw(cmdBuffer);
     }
@@ -78,3 +82,7 @@ class Command {
   std::vector<vk::UniqueCommandBuffer> cmdBuffers_;
   std::vector<std::unique_ptr<Buffer>> vertBuffers_;
 };
+
+}  // namespace vulkan_renderer
+
+#endif

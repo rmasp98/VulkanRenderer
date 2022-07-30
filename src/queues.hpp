@@ -1,10 +1,13 @@
-#pragma once
+#ifndef VULKAN_RENDERER_QUEUES_HPP
+#define VULKAN_RENDERER_QUEUES_HPP
 
 #include <set>
 
 #include "defaults.hpp"
 #include "device_api.hpp"
 #include "vulkan/vulkan.hpp"
+
+namespace vulkan_renderer {
 
 class Queues {
  public:
@@ -106,3 +109,7 @@ class Queues {
     return renderCompleteFences_[semaphoreIndex_].get();
   }
 };
+
+}  // namespace vulkan_renderer
+
+#endif

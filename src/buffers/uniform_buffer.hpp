@@ -1,8 +1,11 @@
-#pragma once
+#ifndef VULKAN_RENDERER_UNIFORM_BUFFER_HPP
+#define VULKAN_RENDERER_UNIFORM_BUFFER_HPP
 
 #include "descriptor_sets.hpp"
 #include "device_api.hpp"
 #include "queues.hpp"
+
+namespace vulkan_renderer {
 
 class Uniform {
  public:
@@ -125,3 +128,34 @@ class UniformImage : public Uniform {
   uint32_t set_;
   std::unique_ptr<SamplerImageBuffer> imageBuffer_;
 };
+
+class PushConstant {
+ public:
+  virtual ~PushConstant() = default;
+  virtual void Upload(vk::UniquePipelineLayout const&,
+                      vk::UniqueCommandBuffer const&) = 0;
+};
+
+template <class T>
+class PushConstantData : public PushConstant {
+ public:
+  PushConstantData(T const& data, vk::ShaderStageFlags const stages,
+                   uint32_t const offset)
+      : data_(data), stages_(stages), offset_(offset) {}
+
+  void Update(T const& data) { data_ = data; }
+
+  void Upload(vk::UniquePipelineLayout const& layout,
+              vk::UniqueCommandBuffer const& cmdBuffer) override {
+    cmdBuffer->pushConstants<T>(layout.get(), stages_, offset_, {data_});
+  }
+
+ private:
+  T data_;
+  vk::ShaderStageFlags stages_;
+  uint32_t offset_;
+};
+
+}  // namespace vulkan_renderer
+
+#endif
