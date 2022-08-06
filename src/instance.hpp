@@ -30,8 +30,7 @@ DeviceFeatures operator&(DeviceFeatures lhs, DeviceFeatures rhs);
 
 class DeviceSpec {
  public:
-  DeviceSpec(vk::PhysicalDevice const& device,
-             vk::UniqueSurfaceKHR const& surface,
+  DeviceSpec(vk::PhysicalDevice const& device, vk::SurfaceKHR const& surface,
              DeviceFeatures const requiredFeatures);
 
   bool HasRequiredFeatures() const {
@@ -42,7 +41,7 @@ class DeviceSpec {
   int GetScore() const { return score_; }
 
   std::shared_ptr<Device> CreateDevice(
-      vk::UniqueSurfaceKHR const& surface, vk::Extent2D& extent,
+      vk::SurfaceKHR const& surface, vk::Extent2D& extent,
       std::function<void()> const swapchainRecreateCallback) const;
 
   // This and has needed to be key of an unordered map
@@ -100,7 +99,7 @@ class Instance {
     instance_ = CreateInstance(layers, extensions, debugMessenger);
     surface_ = window.GetVulkanSurface(instance_);
 
-    debugMessenger_.Initialise(instance_);
+    debugMessenger_.Initialise(instance_.get());
   }
 
   std::vector<DeviceSpec> GetSuitableDevices(

@@ -42,7 +42,8 @@ class DescriptorSets {
       DeviceApi const& device) {
     for (auto& [setIndex, layout] : layouts) {
       descriptorSets_.emplace(
-          setIndex, DescriptorSet{layout.Bindings, layout.Layout, device});
+          setIndex,
+          DescriptorSet{layout.Bindings, layout.Layout.get(), device});
     }
   }
 
@@ -55,6 +56,14 @@ class DescriptorSets {
     updates_.push_back(writeSet);
   }
 
+  void AddUpdate(uint32_t const set, vk::WriteDescriptorSet& writeSet) {
+    assert(descriptorSets_.contains(set));
+    for (uint32_t i = 0; i < descriptorSets_.at(set).DescriptorSets.size();
+         ++i) {
+      AddUpdate(set, i, writeSet);
+    }
+  }
+
   void SubmitUpdates(DeviceApi const& device) {
     if (updates_.size()) {
       device.UpdateDescriptorSet(updates_);
@@ -62,24 +71,22 @@ class DescriptorSets {
     }
   }
 
-  void Bind(ImageIndex const imageIndex,
-            vk::UniqueCommandBuffer const& cmdBuffer,
-            vk::UniquePipelineLayout const& layout) {
+  void Bind(ImageIndex const imageIndex, vk::CommandBuffer const& cmdBuffer,
+            vk::PipelineLayout const& layout) const {
     for (auto& [_, set] : descriptorSets_) {
       assert(imageIndex < set.DescriptorSets.size());
-      cmdBuffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                    layout.get(), 0,
-                                    {set.DescriptorSets[imageIndex].get()}, {});
+      cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0,
+                                   {set.DescriptorSets[imageIndex].get()}, {});
     }
   }
 
  private:
   struct DescriptorSet {
     DescriptorSet(std::vector<vk::DescriptorSetLayoutBinding> const& bindings,
-                  vk::UniqueDescriptorSetLayout const& layout,
+                  vk::DescriptorSetLayout const& layout,
                   DeviceApi const& device)
         : Bindings(bindings),
-          DescriptorSets(device.AllocateDescriptorSet(layout.get())) {}
+          DescriptorSets(device.AllocateDescriptorSet(layout)) {}
 
     std::vector<vk::DescriptorSetLayoutBinding> Bindings;
     std::vector<vk::UniqueDescriptorSet> DescriptorSets;

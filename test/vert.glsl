@@ -1,5 +1,9 @@
 #version 450
 
+// layout(binding = 0) uniform UniformBufferObject {
+//    mat4 mvp;
+// } ubo;
+
 layout (push_constant) uniform constants {
     mat4 mvp;
 } pc;

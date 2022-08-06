@@ -18,10 +18,10 @@ class DeviceBuffer {
                    vk::MemoryPropertyFlagBits::eHostCoherent)
       : buffer_(device.CreateBuffer(size, bufferUsage)),
         isOutdated_(true),
-        allocation_(device.AllocateMemory(buffer_, memoryFlags)),
+        allocation_(device.AllocateMemory(buffer_.get(), memoryFlags)),
         size_(size),
         offset_(device.GetMemoryOffset(allocation_)),
-        bufferInfo_(GetBuffer().get(), 0, size_) {}
+        bufferInfo_(GetBuffer(), 0, size_) {}
 
   virtual ~DeviceBuffer() = default;
   DeviceBuffer(const DeviceBuffer&) = delete;
@@ -30,22 +30,21 @@ class DeviceBuffer {
   virtual void Upload(void const* data, Queues const&, DeviceApi&);
 
   void AddDescriptorSetUpdate(uint32_t const set, ImageIndex const,
-                              vk::WriteDescriptorSet&,
-                              std::unique_ptr<DescriptorSets>&) const;
+                              vk::WriteDescriptorSet&, DescriptorSets&) const;
 
   void SetOutdated() { isOutdated_ = true; }
-  bool IsOutdated() { return isOutdated_; }
+  bool IsOutdated() const { return isOutdated_; }
 
-  void BindVertex(vk::UniqueCommandBuffer const& cmdBuffer) {
-    cmdBuffer->bindVertexBuffers(0, buffer_.get(), {offset_});
+  void BindVertex(vk::CommandBuffer const& cmdBuffer) const {
+    cmdBuffer.bindVertexBuffers(0, buffer_.get(), {offset_});
   }
 
-  void BindIndex(vk::UniqueCommandBuffer const& cmdBuffer) {
-    cmdBuffer->bindIndexBuffer(buffer_.get(), offset_, vk::IndexType::eUint32);
+  void BindIndex(vk::CommandBuffer const& cmdBuffer) const {
+    cmdBuffer.bindIndexBuffer(buffer_.get(), offset_, vk::IndexType::eUint32);
   }
 
  protected:
-  vk::UniqueBuffer const& GetBuffer() { return buffer_; }
+  vk::Buffer const& GetBuffer() { return buffer_.get(); }
   uint32_t const& GetSize() { return size_; }
 
  private:
@@ -69,10 +68,9 @@ class TransferDeviceBuffer : protected DeviceBuffer {
     DeviceBuffer::Upload(data, queues, device);
   }
 
-  void CopyToBuffer(vk::UniqueBuffer const& targetBuffer, Queues const&,
-                    DeviceApi&);
+  void CopyToBuffer(vk::Buffer const& targetBuffer, Queues const&, DeviceApi&);
 
-  void CopyToImage(vk::UniqueImage const& targetImage, ImageProperties&,
+  void CopyToImage(vk::Image const& targetImage, ImageProperties&,
                    Queues const&, DeviceApi&);
 };
 
@@ -87,14 +85,14 @@ class OptimisedDeviceBuffer : public DeviceBuffer {
   virtual void Upload(void const* data, Queues const&, DeviceApi&) override;
 };
 
-void TransitionImageLayout(vk::UniqueImage const&, uint32_t const mipLevel,
+void TransitionImageLayout(vk::Image const&, uint32_t const mipLevel,
                            uint32_t const numMipLevels, vk::Format const,
                            vk::ImageLayout const sourceLayout,
                            vk::ImageLayout const destinationLayout,
-                           vk::UniqueCommandBuffer const&);
+                           vk::CommandBuffer const&);
 
-void GenerateMipMaps(vk::UniqueImage const&, ImageProperties const&,
-                     vk::UniqueCommandBuffer const&);
+void GenerateMipMaps(vk::Image const&, ImageProperties const&,
+                     vk::CommandBuffer const&);
 
 }  // namespace vulkan_renderer
 

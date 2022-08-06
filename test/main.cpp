@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "buffers/image_buffer.hpp"
+#include "containers.hpp"
 #include "instance.hpp"
 #include "vulkan/vulkan.hpp"
 #include "window.hpp"
@@ -12,38 +13,6 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/hash.hpp>
-
-struct Vertex {
-  glm::vec3 Position;
-  glm::vec3 Colour;
-  glm::vec2 UVs;
-
-  static std::vector<vk::VertexInputAttributeDescription> GetAttributeDetails(
-      uint32_t binding) {
-    return {
-        {0, binding, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, Position)},
-        {1, binding, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, Colour)},
-        {2, binding, vk::Format::eR32G32Sfloat, offsetof(Vertex, UVs)}};
-  }
-  auto operator<=>(Vertex const& rhs) const = default;
-};
-
-template <>
-struct std::hash<Vertex> {
-  size_t operator()(Vertex const& vertex) const {
-    return ((std::hash<glm::vec3>()(vertex.Position) ^
-             (std::hash<glm::vec3>()(vertex.Colour) << 1)) >>
-            1) ^
-           (std::hash<glm::vec2>()(vertex.UVs) << 1);
-  }
-};
-
 int main() {
   auto window = Window("test", 800, 500);
 
@@ -51,22 +20,21 @@ int main() {
   auto device =
       instance.GetDevice(vulkan_renderer::DeviceFeatures::SampleShading);
 
+  auto renderPass =
+      device->CreateRenderPass({true, vk::SampleCountFlagBits::e64});
+
   std::unordered_map<vk::ShaderStageFlagBits, std::vector<char>> shaders{
       {vk::ShaderStageFlagBits::eVertex,
-       {vulkan_renderer::LoadShader("../../shaders/vert.spv")}},
+       {vulkan_renderer::LoadShader("../../test/vert.spv")}},
       {vk::ShaderStageFlagBits::eFragment,
-       {vulkan_renderer::LoadShader("../../shaders/frag.spv")}}};
+       {vulkan_renderer::LoadShader("../../test/frag.spv")}}};
 
   vulkan_renderer::PipelineSettings pipelineSettings{
       .Shaders = shaders,
       .Multisampling = {{}, vk::SampleCountFlagBits::e64, true, 0.2f}};
+  pipelineSettings.Rasterizer.setFrontFace(vk::FrontFace::eCounterClockwise);
   pipelineSettings.AddVertexLayout<Vertex>();
-  auto pipeline = device->CreatePipeline(pipelineSettings);
-
-  auto pushConstant =
-      std::make_shared<vulkan_renderer::PushConstantData<vulkan_renderer::MVP>>(
-          vulkan_renderer::MVP{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
-          vk::ShaderStageFlagBits::eVertex, 0);
+  auto pipeline = device->CreatePipeline(pipelineSettings, renderPass);
 
   tinyobj::attrib_t attrib;
   std::vector<tinyobj::shape_t> shapes;
@@ -99,8 +67,8 @@ int main() {
     }
   }
 
-  std::unique_ptr<vulkan_renderer::Buffer> mesh =
-      std::make_unique<vulkan_renderer::IndexBuffer<Vertex>>(vertices, indices);
+  auto mesh =
+      std::make_shared<vulkan_renderer::IndexBuffer<Vertex>>(vertices, indices);
 
   int texWidth, texHeight, texChannels;
   stbi_uc* pixels = stbi_load("../../test/viking_room.png", &texWidth,
@@ -118,18 +86,27 @@ int main() {
       vulkan_renderer::ImageProperties{
           .Extent = {static_cast<uint32_t>(texWidth),
                      static_cast<uint32_t>(texHeight), 1},
-          .MipLevels = 10,
-          .MinLod = 5.0f,
-          .MaxLod = 10.0f,
-          .MipMapMode = vk::SamplerMipmapMode::eLinear},
+          // .MipLevels = 10,
+          // .MinLod = 5.0f,
+          // .MaxLod = 10.0f,
+          // .MipMapMode = vk::SamplerMipmapMode::eLinear
+      },
       1);
 
-  mesh->AddPushConstant(pushConstant);
+  auto uniform = std::make_shared<vulkan_renderer::PushConstantData<MVP>>(
+      MVP{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
+      vk::ShaderStageFlagBits::eVertex, 0);
+  mesh->AddPushConstant(uniform);
+
+  // auto uniform = std::make_shared<vulkan_renderer::UniformBuffer<MVP>>(
+  //     MVP{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}, 0);
+  // mesh->AddUniform(uniform);
+
   mesh->AddUniform(imageData);
 
   vulkan_renderer::Command command;
-  command.AddVertexBuffer(std::move(mesh));
-  auto commandId = pipeline->AddCommand(std::move(command));
+  command.AddVertexBuffer(mesh);
+  auto commandHandle = device->AddCommand(std::move(command));
 
   auto view =
       glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
@@ -141,17 +118,26 @@ int main() {
   float time = glfwGetTime();
   while (!window.ShouldClose()) {
     window.Update();
-    device->Draw(pipeline, commandId);
+
+    device->StartRender(renderPass);
 
     auto model = glm::rotate(glm::mat4(1.0f), time * glm::radians(45.0f),
                              glm::vec3(0.0f, 0.0f, 1.0f));
 
     auto mvp = proj * view * model;
-    pushConstant->Update(*reinterpret_cast<vulkan_renderer::MVP*>(&mvp));
+    uniform->Update(*reinterpret_cast<MVP*>(&mvp));
+
+    device->Draw(commandHandle, pipeline);
+
+    device->PresentRender();
 
     // Force 60 FPS
+    // TODO: this can be done by setting present mode to
+    // VK_PRESENT_MODE_FIFO_KHR
     auto waittime = (1.0f / 60.0f) - (glfwGetTime() - time);
-    usleep(waittime * 1000000);
+    if (waittime > 0) {
+      usleep(waittime * 1000000);
+    }
     time = glfwGetTime();
   }
   device->WaitIdle();

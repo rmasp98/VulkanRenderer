@@ -1,97 +1,85 @@
 #ifndef VULKAN_RENDERER_PIPELINE_HPP
 #define VULKAN_RENDERER_PIPELINE_HPP
 
-#include "command.hpp"
+#include "buffers/uniform_buffer.hpp"
+#include "descriptor_sets.hpp"
 #include "device_api.hpp"
-#include "framebuffer.hpp"
-#include "pipeline_settings.hpp"
+#include "handle.hpp"
+#include "render_settings.hpp"
 #include "shader.hpp"
 
 namespace vulkan_renderer {
 
-using CommandId = uint32_t;
+using PipelineId = uint32_t;
+using PipelineHandle = Handle<PipelineId>;
 
 class Pipeline {
  public:
-  // TODO: should probably have the commandPool and descriptor pool here
-  Pipeline(PipelineSettings const& settings, vk::Extent2D const& extent,
-           std::vector<vk::UniqueImageView>&& imageViews, Queues const& queues,
-           DeviceApi& device)
-      : settings_(settings),
+  // TODO: should probably have the descriptor pool here
+  Pipeline(PipelineId const id, PipelineSettings const& settings,
+           vk::RenderPass const& renderPass, DeviceApi& device)
+      : id_(id),
+        settings_(settings),
         shaders_(settings_.CreateShaders(device)),
-        descriptorSetLayouts_(shaders_, device),
+        descriptorSetLayouts_(CreateDescriptorSetLayouts(shaders_, device)),
         layout_(
             device.CreatePipelineLayout(settings_.GetPipelineLayoutCreateInfo(
-                descriptorSetLayouts_.GetLayouts(), GetPushConstants()))),
-        attachmentBuffers_(
-            settings_.CreateAttachmentBuffers(extent, queues, device)),
-        renderPass_(device.CreateRenderpass(
-            settings_.GetRenderPassCreateInfo(device.GetSurfaceFormat()))),
+                GetLayouts(), GetPushConstants()))),
         cache_(device.CreatePipelineCache({})),
         pipeline_(device.CreatePipeline(
-            cache_, settings_.GetPipelineCreateInfo(GetShaderStages(), layout_,
-                                                    renderPass_))),
-        framebuffers_(device.CreateFramebuffers(
-            std::forward<std::vector<vk::UniqueImageView>>(imageViews),
-            GetAttachmentImageViews(), renderPass_, extent)) {}
+            cache_, settings_.GetPipelineCreateInfo(
+                        GetShaderStages(), layout_.get(), renderPass))) {}
 
-  CommandId AddCommand(Command&& command) {
-    // TODO: do this properly
-    commands_.emplace(0, std::move(command));
-    return 0;
+  PipelineId GetId() const { return id_; }
+
+  DescriptorSets CreateDescriptorSets(DeviceApi const& device) const {
+    return {descriptorSetLayouts_, device};
   }
 
-  void RecordCommands(ImageIndex const imageIndex, vk::Extent2D const& extent,
-                      Queues const& queues, DeviceApi& device) {
-    assert(imageIndex < framebuffers_.size());
-
-    for (auto& element : commands_) {
-      auto& command = element.second;
-      command.Initialise(descriptorSetLayouts_, queues, device);
-
-      command.Record(imageIndex, pipeline_, layout_, renderPass_,
-                     settings_.GetClearValues(), framebuffers_[imageIndex],
-                     extent, queues, device);
-    }
+  void UploadPushConstants(std::shared_ptr<PushConstant> const& pushConstant,
+                           vk::CommandBuffer const& cmdBuffer) const {
+    pushConstant->Upload(layout_.get(), cmdBuffer);
   }
 
-  void Draw(CommandId commandId, uint32_t const imageIndex,
-            Queues const& queues) const {
-    assert(commands_.contains(commandId));
-    commands_.at(commandId).Draw(imageIndex, queues);
+  void Bind(vk::CommandBuffer const& cmdBuffer) const {
+    cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline_.get());
   }
 
-  void Recreate(std::vector<vk::UniqueImageView>&& imageViews,
-                vk::Extent2D const& extent, Queues const& queues,
-                DeviceApi& device) {
-    attachmentBuffers_ =
-        settings_.CreateAttachmentBuffers(extent, queues, device);
-    renderPass_ = device.CreateRenderpass(
-        settings_.GetRenderPassCreateInfo(device.GetSurfaceFormat()));
+  void BindDescriptorSet(ImageIndex const imageIndex,
+                         DescriptorSets const& descriptorSets,
+                         vk::CommandBuffer const& cmdBuffer) const {
+    descriptorSets.Bind(imageIndex, cmdBuffer, layout_.get());
+  }
+
+  void Recreate(vk::RenderPass const& renderPass, DeviceApi const& device) {
     pipeline_ = device.CreatePipeline(
-        cache_, settings_.GetPipelineCreateInfo(GetShaderStages(), layout_,
-                                                renderPass_));
-    framebuffers_ = device.CreateFramebuffers(
-        std::forward<std::vector<vk::UniqueImageView>>(imageViews),
-        GetAttachmentImageViews(), renderPass_, extent);
-
-    for (auto& command : commands_) {
-      command.second.Unregister();
-    }
+        cache_, settings_.GetPipelineCreateInfo(GetShaderStages(),
+                                                layout_.get(), renderPass));
   }
 
- private:
-  PipelineSettings settings_;
-  std::vector<Shader> shaders_;
-  DescriptorSetLayouts descriptorSetLayouts_;
-  vk::UniquePipelineLayout layout_;
-  std::vector<ImageBuffer> attachmentBuffers_;
-  vk::UniqueRenderPass renderPass_;
-  vk::UniquePipelineCache cache_;
-  vk::UniquePipeline pipeline_;
-  std::vector<Framebuffer> framebuffers_;
-  std::unordered_map<CommandId, Command> commands_;
+ protected:
+  // TODO: move outside class
+  std::vector<vk::DescriptorSetLayout> GetLayouts() const {
+    std::vector<vk::DescriptorSetLayout> layouts;
+    for (auto& [_, set] : descriptorSetLayouts_) {
+      layouts.push_back(set.Layout.get());
+    }
+    return layouts;
+  }
 
+  // TODO: move outside class
+  std::unordered_map<uint32_t, DescriptorSetLayout> CreateDescriptorSetLayouts(
+      std::vector<Shader> const& shaders, DeviceApi const& device) {
+    auto combinedSetBindings = GetCombinedBindingsFromShaders(shaders);
+
+    std::unordered_map<uint32_t, DescriptorSetLayout> setLayouts;
+    for (auto& [set, bindings] : combinedSetBindings) {
+      setLayouts.emplace(set, DescriptorSetLayout{bindings, device});
+    }
+    return setLayouts;
+  }
+
+  // TODO: move outside class
   std::vector<vk::PipelineShaderStageCreateInfo> GetShaderStages() {
     std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
     for (auto& shader : shaders_) {
@@ -100,14 +88,7 @@ class Pipeline {
     return shaderStages;
   }
 
-  std::vector<vk::ImageView> GetAttachmentImageViews() {
-    std::vector<vk::ImageView> imageViews;
-    for (auto const& buffer : attachmentBuffers_) {
-      imageViews.push_back(buffer.GetImageView().get());
-    }
-    return imageViews;
-  }
-
+  // TODO: move outside class
   std::vector<vk::PushConstantRange> GetPushConstants() const {
     std::vector<vk::PushConstantRange> pushConstants;
     for (auto const& shader : shaders_) {
@@ -117,6 +98,15 @@ class Pipeline {
     }
     return pushConstants;
   }
+
+ private:
+  PipelineId id_;
+  PipelineSettings settings_;
+  std::vector<Shader> shaders_;
+  std::unordered_map<uint32_t, DescriptorSetLayout> descriptorSetLayouts_;
+  vk::UniquePipelineLayout layout_;
+  vk::UniquePipelineCache cache_;
+  vk::UniquePipeline pipeline_;
 };
 
 }  // namespace vulkan_renderer

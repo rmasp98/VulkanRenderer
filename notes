@@ -1,4 +1,8 @@
 TODO:
+ - Should we have default uniforms for pipelines?
+
+
+Features:
  - memory manangement working on buffer uploads
  - Instanced rendering
  - Dynamic uniforms

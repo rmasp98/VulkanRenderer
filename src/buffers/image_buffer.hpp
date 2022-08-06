@@ -30,7 +30,7 @@ class ImageBuffer {
             },
             queues.GetQueueFamilies().UniqueIndices())),
         allocation_(device.AllocateMemory(
-            image_, vk::MemoryPropertyFlagBits::eDeviceLocal)),
+            image_.get(), vk::MemoryPropertyFlagBits::eDeviceLocal)),
         imageView_(device.CreateImageView(
             image_.get(), vk::ImageViewType::e2D, properties_.Format, {},
             {properties_.Aspect, 0, properties_.MipLevels, 0, 1})) {}
@@ -42,7 +42,7 @@ class ImageBuffer {
                                             properties_.Extent.depth * 4,
                                         device};
     transferBuffer.Upload(data.data(), queues, device);
-    transferBuffer.CopyToImage(image_, properties_, queues, device);
+    transferBuffer.CopyToImage(image_.get(), properties_, queues, device);
 
     isOutdated_ = false;
   }
@@ -50,10 +50,10 @@ class ImageBuffer {
   void SetOutdated() { isOutdated_ = true; }
   bool IsOutdated() const { return isOutdated_; }
 
-  vk::UniqueImageView const& GetImageView() const { return imageView_; }
+  vk::ImageView const& GetImageView() const { return imageView_.get(); }
 
  protected:
-  vk::UniqueImage const& GetImage() const { return image_; }
+  vk::Image const& GetImage() const { return image_.get(); }
   ImageProperties const& GetProperties() const { return properties_; }
 
  private:
@@ -86,14 +86,20 @@ class SamplerImageBuffer : public ImageBuffer {
              GetProperties().MaxLod,
              GetProperties().BorderColour,
              GetProperties().UnnormaliseCoordinates})),
-        imageInfo_(sampler_.get(), GetImageView().get(),
-                   GetProperties().Layout) {}
+        imageInfo_(sampler_.get(), GetImageView(), GetProperties().Layout) {}
 
   void AddDescriptorSetUpdate(uint32_t const set, ImageIndex const imageIndex,
                               vk::WriteDescriptorSet& writeSet,
-                              std::unique_ptr<DescriptorSets>& descriptorSets) {
+                              DescriptorSets& descriptorSets) {
     writeSet.setImageInfo(imageInfo_);
-    descriptorSets->AddUpdate(set, imageIndex, writeSet);
+    descriptorSets.AddUpdate(set, imageIndex, writeSet);
+  }
+
+  void AddDescriptorSetUpdate(uint32_t const set,
+                              vk::WriteDescriptorSet& writeSet,
+                              DescriptorSets& descriptorSets) {
+    writeSet.setImageInfo(imageInfo_);
+    descriptorSets.AddUpdate(set, writeSet);
   }
 
  private:
@@ -112,17 +118,16 @@ class DepthBuffer : public ImageBuffer {
                      .Aspect = vk::ImageAspectFlagBits::eDepth,
                      .SampleCount = multiSampleCount},
                     queues, device) {
-    auto cmdBuffer =
-        device.AllocateCommandBuffers(vk::CommandBufferLevel::ePrimary, 1);
-    cmdBuffer[0]->begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    auto cmdBuffer = device.AllocateCommandBuffer();
+    cmdBuffer->begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
     auto properties = GetProperties();
     TransitionImageLayout(GetImage(), 0, properties.MipLevels,
                           properties.Format, vk::ImageLayout::eUndefined,
                           vk::ImageLayout::eDepthStencilAttachmentOptimal,
-                          cmdBuffer[0]);
-    cmdBuffer[0]->end();
+                          cmdBuffer.get());
+    cmdBuffer->end();
 
-    queues.SubmitToGraphics(cmdBuffer[0]);
+    queues.SubmitToGraphics(cmdBuffer.get());
     queues.GraphicsWaitIdle();
   }
 

@@ -11,19 +11,13 @@ class Uniform {
  public:
   virtual ~Uniform() = default;
 
-  virtual void Allocate(Queues const&, DeviceApi&,
-                        bool const force = false) = 0;
+  virtual void Allocate(Queues const&, DeviceApi&) = 0;
   virtual void Deallocate() = 0;
 
+  virtual bool IsOutdated(ImageIndex const) const = 0;
   virtual void Upload(ImageIndex const, Queues const&, DeviceApi&) = 0;
 
-  virtual void AddDescriptorSetUpdate(
-      ImageIndex const, std::unique_ptr<DescriptorSets>&) const = 0;
-};
-
-struct MVP {
-  float data[16];
-  auto operator<=>(MVP const& rhs) const = default;
+  virtual void AddDescriptorSetUpdate(DescriptorSets&) const = 0;
 };
 
 template <typename T>
@@ -42,35 +36,38 @@ class UniformBuffer : public Uniform {
   }
 
  protected:
-  void Allocate(Queues const& queues, DeviceApi& device,
-                bool const force) override {
-    if (force || deviceBuffers_.size() == 0) {
-      for (uint32_t i = 0; i < device.GetNumSwapchainImages(); ++i) {
-        deviceBuffers_.emplace_back(
-            sizeof(T), vk::BufferUsageFlagBits::eUniformBuffer, device);
-      }
+  void Allocate(Queues const& queues, DeviceApi& device) override {
+    for (uint32_t i = 0; i < device.GetNumSwapchainImages(); ++i) {
+      deviceBuffers_.emplace_back(
+          sizeof(T), vk::BufferUsageFlagBits::eUniformBuffer, device);
     }
   }
 
   void Deallocate() override { deviceBuffers_.clear(); }
 
-  void Upload(ImageIndex const imageIndex, Queues const& queues,
-              DeviceApi& device) override {
+  bool IsOutdated(ImageIndex const imageIndex) const override {
     assert(imageIndex < deviceBuffers_.size());
-    if (deviceBuffers_[imageIndex].IsOutdated()) {
-      deviceBuffers_[imageIndex].Upload(&data_, queues, device);
-    }
+    return deviceBuffers_[imageIndex].IsOutdated();
   }
 
-  void AddDescriptorSetUpdate(
-      ImageIndex const imageIndex,
-      std::unique_ptr<DescriptorSets>& descriptorSets) const override {
+  void Upload(ImageIndex const imageIndex, Queues const& queues,
+              DeviceApi& device) override {
+    if (deviceBuffers_.size() == 0) {
+      Allocate(queues, device);
+    }
+
     assert(imageIndex < deviceBuffers_.size());
-    vk::WriteDescriptorSet writeSet{
-        {},      binding_, 0,      1, vk::DescriptorType::eUniformBuffer,
-        nullptr, nullptr,  nullptr};
-    deviceBuffers_[imageIndex].AddDescriptorSetUpdate(set_, imageIndex,
-                                                      writeSet, descriptorSets);
+    deviceBuffers_[imageIndex].Upload(&data_, queues, device);
+  }
+
+  void AddDescriptorSetUpdate(DescriptorSets& descriptorSets) const override {
+    for (uint32_t i = 0; i < deviceBuffers_.size(); ++i) {
+      vk::WriteDescriptorSet writeSet{
+          {},      binding_, 0,      1, vk::DescriptorType::eUniformBuffer,
+          nullptr, nullptr,  nullptr};
+      deviceBuffers_[i].AddDescriptorSetUpdate(set_, i, writeSet,
+                                               descriptorSets);
+    }
   }
 
  private:
@@ -92,33 +89,32 @@ class UniformImage : public Uniform {
   }
 
  protected:
-  void Allocate(Queues const& queues, DeviceApi& device,
-                bool const force) override {
-    if (force || imageBuffer_ == nullptr) {
-      imageBuffer_ =
-          std::make_unique<SamplerImageBuffer>(properties_, queues, device);
-    }
+  void Allocate(Queues const& queues, DeviceApi& device) override {
+    imageBuffer_ =
+        std::make_unique<SamplerImageBuffer>(properties_, queues, device);
   }
 
   void Deallocate() override { imageBuffer_.reset(); }
 
-  void Upload(ImageIndex const, Queues const& queues,
-              DeviceApi& device) override {
+  bool IsOutdated(ImageIndex const) const override {
     assert(imageBuffer_);
-    if (imageBuffer_->IsOutdated()) {
-      imageBuffer_->Upload(data_, queues, device);
-    }
+    return imageBuffer_->IsOutdated();
   }
 
-  void AddDescriptorSetUpdate(
-      ImageIndex const imageIndex,
-      std::unique_ptr<DescriptorSets>& descriptorSets) const override {
+  void Upload(ImageIndex const, Queues const& queues,
+              DeviceApi& device) override {
+    if (!imageBuffer_) {
+      Allocate(queues, device);
+    }
+    imageBuffer_->Upload(data_, queues, device);
+  }
+
+  void AddDescriptorSetUpdate(DescriptorSets& descriptorSets) const override {
     assert(imageBuffer_);
     vk::WriteDescriptorSet writeSet{
         {},      binding_, 0,      1, vk::DescriptorType::eCombinedImageSampler,
         nullptr, nullptr,  nullptr};
-    imageBuffer_->AddDescriptorSetUpdate(set_, imageIndex, writeSet,
-                                         descriptorSets);
+    imageBuffer_->AddDescriptorSetUpdate(set_, writeSet, descriptorSets);
   }
 
  private:
@@ -132,8 +128,9 @@ class UniformImage : public Uniform {
 class PushConstant {
  public:
   virtual ~PushConstant() = default;
-  virtual void Upload(vk::UniquePipelineLayout const&,
-                      vk::UniqueCommandBuffer const&) = 0;
+  virtual void SubscribeUpdates(std::function<void()> const& callback) = 0;
+  virtual void Upload(vk::PipelineLayout const&,
+                      vk::CommandBuffer const&) const = 0;
 };
 
 template <class T>
@@ -143,17 +140,27 @@ class PushConstantData : public PushConstant {
                    uint32_t const offset)
       : data_(data), stages_(stages), offset_(offset) {}
 
-  void Update(T const& data) { data_ = data; }
+  void Update(T const& data) {
+    data_ = data;
+    if (callback_) {
+      callback_();
+    }
+  }
 
-  void Upload(vk::UniquePipelineLayout const& layout,
-              vk::UniqueCommandBuffer const& cmdBuffer) override {
-    cmdBuffer->pushConstants<T>(layout.get(), stages_, offset_, {data_});
+  void SubscribeUpdates(std::function<void()> const& callback) override {
+    callback_ = callback;
+  }
+
+  void Upload(vk::PipelineLayout const& layout,
+              vk::CommandBuffer const& cmdBuffer) const override {
+    cmdBuffer.pushConstants<T>(layout, stages_, offset_, {data_});
   }
 
  private:
   T data_;
   vk::ShaderStageFlags stages_;
   uint32_t offset_;
+  std::function<void()> callback_;
 };
 
 }  // namespace vulkan_renderer

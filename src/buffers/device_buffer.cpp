@@ -11,50 +11,47 @@ void DeviceBuffer::Upload(void const* data, Queues const&, DeviceApi& device) {
 
 void DeviceBuffer::AddDescriptorSetUpdate(
     uint32_t const set, ImageIndex const imageIndex,
-    vk::WriteDescriptorSet& writeSet,
-    std::unique_ptr<DescriptorSets>& descriptorSets) const {
+    vk::WriteDescriptorSet& writeSet, DescriptorSets& descriptorSets) const {
   writeSet.setBufferInfo(bufferInfo_);
-  descriptorSets->AddUpdate(set, imageIndex, writeSet);
+  descriptorSets.AddUpdate(set, imageIndex, writeSet);
 }
 
-void TransferDeviceBuffer::CopyToBuffer(vk::UniqueBuffer const& targetBuffer,
+void TransferDeviceBuffer::CopyToBuffer(vk::Buffer const& targetBuffer,
                                         Queues const& queues,
                                         DeviceApi& device) {
-  auto cmdBuffer =
-      device.AllocateCommandBuffers(vk::CommandBufferLevel::ePrimary, 1);
-  cmdBuffer[0]->begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+  auto cmdBuffer = device.AllocateCommandBuffer();
+  cmdBuffer->begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
   vk::BufferCopy copyRegion{0, 0, GetSize()};
-  cmdBuffer[0]->copyBuffer(GetBuffer().get(), targetBuffer.get(), copyRegion);
-  cmdBuffer[0]->end();
+  cmdBuffer->copyBuffer(GetBuffer(), targetBuffer, copyRegion);
+  cmdBuffer->end();
 
-  queues.SubmitToGraphics(cmdBuffer[0]);
+  queues.SubmitToGraphics(cmdBuffer.get());
   // TODO: remove if we can deallocate in response to completion in callback
   queues.GraphicsWaitIdle();
 }
 
-void TransferDeviceBuffer::CopyToImage(vk::UniqueImage const& targetImage,
+void TransferDeviceBuffer::CopyToImage(vk::Image const& targetImage,
                                        ImageProperties& properties,
                                        Queues const& queues,
                                        DeviceApi& device) {
-  auto cmdBuffer =
-      device.AllocateCommandBuffers(vk::CommandBufferLevel::ePrimary, 1);
-  cmdBuffer[0]->begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+  auto cmdBuffer = device.AllocateCommandBuffer();
+  cmdBuffer->begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
   TransitionImageLayout(targetImage, 0, properties.MipLevels, properties.Format,
                         vk::ImageLayout::eUndefined,
-                        vk::ImageLayout::eTransferDstOptimal, cmdBuffer[0]);
+                        vk::ImageLayout::eTransferDstOptimal, cmdBuffer.get());
 
   vk::BufferImageCopy region{
       0, 0, 0, {properties.Aspect, 0, 0, 1}, {0, 0, 0}, properties.Extent};
-  cmdBuffer[0]->copyBufferToImage(GetBuffer().get(), targetImage.get(),
-                                  vk::ImageLayout::eTransferDstOptimal, 1,
-                                  &region);
+  cmdBuffer->copyBufferToImage(GetBuffer(), targetImage,
+                               vk::ImageLayout::eTransferDstOptimal, 1,
+                               &region);
 
-  GenerateMipMaps(targetImage, properties, cmdBuffer[0]);
+  GenerateMipMaps(targetImage, properties, cmdBuffer.get());
 
-  cmdBuffer[0]->end();
+  cmdBuffer->end();
 
-  queues.SubmitToGraphics(cmdBuffer[0]);
+  queues.SubmitToGraphics(cmdBuffer.get());
   // TODO: remove if we can deallocate in response to completion in callback
   queues.GraphicsWaitIdle();
 }
@@ -146,12 +143,11 @@ vk::PipelineStageFlags GetDestinationStage(
   return {};
 }
 
-void TransitionImageLayout(vk::UniqueImage const& image,
-                           uint32_t const mipLevel, uint32_t const numMipLevels,
-                           vk::Format const format,
+void TransitionImageLayout(vk::Image const& image, uint32_t const mipLevel,
+                           uint32_t const numMipLevels, vk::Format const format,
                            vk::ImageLayout const sourceLayout,
                            vk::ImageLayout const destinationLayout,
-                           vk::UniqueCommandBuffer const& cmdBuffer) {
+                           vk::CommandBuffer const& cmdBuffer) {
   vk::ImageAspectFlags aspectMask = vk::ImageAspectFlagBits::eColor;
   if (destinationLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal) {
     aspectMask = vk::ImageAspectFlagBits::eDepth;
@@ -167,15 +163,14 @@ void TransitionImageLayout(vk::UniqueImage const& image,
       GetSourceAccessMask(sourceLayout),
       GetDestinationAccessMask(destinationLayout), sourceLayout,
       destinationLayout, VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-      image.get(), imageSubresourceRange);
-  cmdBuffer->pipelineBarrier(GetSourceStage(sourceLayout),
-                             GetDestinationStage(destinationLayout), {},
-                             nullptr, nullptr, imageMemoryBarrier);
+      image, imageSubresourceRange);
+  cmdBuffer.pipelineBarrier(GetSourceStage(sourceLayout),
+                            GetDestinationStage(destinationLayout), {}, nullptr,
+                            nullptr, imageMemoryBarrier);
 }
 
-void GenerateMipMaps(vk::UniqueImage const& image,
-                     ImageProperties const& properties,
-                     vk::UniqueCommandBuffer const& cmdBuffer) {
+void GenerateMipMaps(vk::Image const& image, ImageProperties const& properties,
+                     vk::CommandBuffer const& cmdBuffer) {
   vk::Offset3D baseOffset{static_cast<int>(properties.Extent.width),
                           static_cast<int>(properties.Extent.height), 1};
   vk::Offset3D mipOffset{baseOffset.x / 2, baseOffset.y / 2, 1};
@@ -189,9 +184,9 @@ void GenerateMipMaps(vk::UniqueImage const& image,
                        {vk::Offset3D{0, 0, 0}, baseOffset},
                        {properties.Aspect, i, 0, 1},
                        {vk::Offset3D{0, 0, 0}, mipOffset}};
-    cmdBuffer->blitImage(image.get(), vk::ImageLayout::eTransferSrcOptimal,
-                         image.get(), vk::ImageLayout::eTransferDstOptimal,
-                         blit, vk::Filter::eLinear);
+    cmdBuffer.blitImage(image, vk::ImageLayout::eTransferSrcOptimal, image,
+                        vk::ImageLayout::eTransferDstOptimal, blit,
+                        vk::Filter::eLinear);
 
     TransitionImageLayout(image, i - 1, 1, properties.Format,
                           vk::ImageLayout::eTransferSrcOptimal,
@@ -206,4 +201,4 @@ void GenerateMipMaps(vk::UniqueImage const& image,
                         cmdBuffer);
 }
 
-}
+}  // namespace vulkan_renderer

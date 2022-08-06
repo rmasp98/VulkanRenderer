@@ -11,7 +11,7 @@ std::vector<DeviceSpec> Instance::GetSuitableDevices(
     DeviceFeatures const requiredFeatures) const {
   std::vector<DeviceSpec> devices;
   for (auto const& physicalDevice : instance_->enumeratePhysicalDevices()) {
-    DeviceSpec const device{physicalDevice, surface_, requiredFeatures};
+    DeviceSpec const device{physicalDevice, surface_.get(), requiredFeatures};
     if (device.HasRequiredFeatures() && device.GetScore() >= 0) {
       devices.push_back(std::move(device));
     }
@@ -39,7 +39,7 @@ std::shared_ptr<Device> Instance::GetDevice(DeviceSpec const& deviceSpec) {
     return devices_.at(deviceSpec);
   }
 
-  auto device = deviceSpec.CreateDevice(surface_, extent_,
+  auto device = deviceSpec.CreateDevice(surface_.get(), extent_,
                                         [&]() { RecreateSwapchain(); });
   devices_.insert({deviceSpec, device});
 
@@ -53,7 +53,7 @@ void Instance::RecreateSwapchain() {
   }
 
   for (auto& device : devices_) {
-    device.second->RecreateSwapchain(surface_, extent_);
+    device.second->RecreateSwapchain(surface_.get(), extent_);
   }
 }
 
@@ -79,8 +79,8 @@ vk::UniqueInstance CreateInstance(std::vector<char const*>& layers,
 }
 
 vk::SurfaceFormatKHR GetSurfaceFormat(vk::PhysicalDevice const& device,
-                                      vk::UniqueSurfaceKHR const& surface) {
-  auto formats = device.getSurfaceFormatsKHR(surface.get());
+                                      vk::SurfaceKHR const& surface) {
+  auto formats = device.getSurfaceFormatsKHR(surface);
 
   std::vector<vk::Format> requestedFormats = {
       vk::Format::eB8G8R8A8Unorm, vk::Format::eR8G8B8A8Unorm,
@@ -139,7 +139,7 @@ int GetDeviceScore(vk::PhysicalDevice const& device,
 }
 
 DeviceSpec::DeviceSpec(vk::PhysicalDevice const& device,
-                       vk::UniqueSurfaceKHR const& surface,
+                       vk::SurfaceKHR const& surface,
                        DeviceFeatures const requiredFeatures)
     : device_(device),
       surfaceFormat_(GetSurfaceFormat(device, surface)),
@@ -178,7 +178,7 @@ vk::PhysicalDeviceFeatures DeviceSpec::GetFeatures() const {
 }
 
 std::shared_ptr<Device> DeviceSpec::CreateDevice(
-    vk::UniqueSurfaceKHR const& surface, vk::Extent2D& extent,
+    vk::SurfaceKHR const& surface, vk::Extent2D& extent,
     std::function<void()> const swapchainRecreateCallback) const {
   auto features = GetFeatures();
   return std::make_shared<Device>(device_, &features, queueFamilies_, surface,

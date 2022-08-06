@@ -27,10 +27,10 @@ class DebugMessenger {
         {}, severityFlags, messageTypeFlags, DebugMessenger::DebugCallback};
   }
 
-  void Initialise(vk::UniqueInstance& instance) {
+  void Initialise(vk::Instance& instance) {
     if (enabled_) {
       debugUtilsMessenger_ =
-          instance->createDebugUtilsMessengerEXTUnique(createInfo_);
+          instance.createDebugUtilsMessengerEXTUnique(createInfo_);
     }
   }
 

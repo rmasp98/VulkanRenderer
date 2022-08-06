@@ -4,71 +4,32 @@
 #include "device_api.hpp"
 #include "device_buffer.hpp"
 #include "queues.hpp"
+#include "render_pass.hpp"
 #include "uniform_buffer.hpp"
 #include "vulkan/vulkan.hpp"
 
 namespace vulkan_renderer {
 
-struct ColouredVertex2D {
-  float Vertex[2];  // location 0
-  float Colour[3];  // location 1
-
-  static std::vector<vk::VertexInputAttributeDescription> GetAttributeDetails(
-      uint32_t binding) {
-    return {{0, binding, vk::Format::eR32G32Sfloat,
-             offsetof(ColouredVertex2D, Vertex)},
-            {1, binding, vk::Format::eR32G32B32Sfloat,
-             offsetof(ColouredVertex2D, Colour)}};
-  }
-};
-
-struct UVVertex2D {
-  float Vertex[2];  // location 0
-  float UV[2];      // location 1
-
-  static std::vector<vk::VertexInputAttributeDescription> GetAttributeDetails(
-      uint32_t binding) {
-    return {
-        {0, binding, vk::Format::eR32G32Sfloat, offsetof(UVVertex2D, Vertex)},
-        {1, binding, vk::Format::eR32G32Sfloat, offsetof(UVVertex2D, UV)}};
-  }
-};
-
-struct UVColouredVertex3D {
-  std::array<float, 3> Vertex;  // location 0
-  std::array<float, 3> Colour;  // location 1
-  std::array<float, 2> UV;      // location 2
-
-  static std::vector<vk::VertexInputAttributeDescription> GetAttributeDetails(
-      uint32_t binding) {
-    return {{0, binding, vk::Format::eR32G32B32Sfloat,
-             offsetof(UVColouredVertex3D, Vertex)},
-            {1, binding, vk::Format::eR32G32B32Sfloat,
-             offsetof(UVColouredVertex3D, Colour)},
-            {2, binding, vk::Format::eR32G32Sfloat,
-             offsetof(UVColouredVertex3D, UV)}};
-  }
-
-  auto operator<=>(UVColouredVertex3D const& rhs) const = default;
-};
-
 class Buffer {
  public:
   virtual ~Buffer() = default;
   virtual void AddUniform(std::shared_ptr<Uniform> const&) = 0;
-  virtual void AddPushConstant(std::shared_ptr<PushConstant> const&) = 0;
+  virtual void AddPushConstant(std::shared_ptr<PushConstant>) = 0;
 
-  virtual void Initialise(DescriptorSetLayouts&, Queues const&, DeviceApi&,
-                          bool force = false) = 0;
+  virtual void Allocate(Queues const&, DeviceApi&, bool force = false) = 0;
+  virtual void UpdateDescriptorSets(Pipeline const&, DeviceApi const&) = 0;
+  virtual void ClearDescriptorSets() = 0;
+
+  virtual bool IsOutdated() const = 0;
 
   virtual void Upload(Queues const&, DeviceApi&) = 0;
   virtual void UploadUniforms(ImageIndex const, Queues const&, DeviceApi&) = 0;
-  virtual void UploadPushConstants(vk::UniquePipelineLayout const&,
-                                   vk::UniqueCommandBuffer const&) = 0;
+  virtual void UploadPushConstants(Pipeline const&,
+                                   vk::CommandBuffer const&) = 0;
 
-  virtual void Bind(ImageIndex const, vk::UniquePipelineLayout const&,
-                    vk::UniqueCommandBuffer const&) const = 0;
-  virtual void Draw(vk::UniqueCommandBuffer const&) const = 0;
+  virtual void Bind(ImageIndex const, Pipeline const&,
+                    vk::CommandBuffer const&) const = 0;
+  virtual void Draw(vk::CommandBuffer const&) const = 0;
 };
 
 template <class T>
@@ -81,31 +42,40 @@ class VertexBuffer : public Buffer {
     uniforms_.push_back(uniform);
   }
 
-  void AddPushConstant(
-      std::shared_ptr<PushConstant> const& pushConstant) override {
+  void AddPushConstant(std::shared_ptr<PushConstant> pushConstant) override {
     // TODO: Check to see if set/binding already exists
+    pushConstant->SubscribeUpdates([&]() { isOutdated_ = true; });
     pushConstants_.push_back(pushConstant);
   }
 
-  void Initialise(DescriptorSetLayouts& descriptorSetLayouts,
-                  Queues const& queues, DeviceApi& device, bool force) {
+  void Allocate(Queues const& queues, DeviceApi& device, bool force) {
     if (force || deviceBuffer_ == nullptr) {
       deviceBuffer_ = std::make_unique<OptimisedDeviceBuffer>(
           data_.size() * sizeof(T), vk::BufferUsageFlagBits::eVertexBuffer,
           device);
       Upload(queues, device);
 
-      descriptorSets_ = descriptorSetLayouts.CreateDescriptorSets(device);
-
       for (auto& uniform : uniforms_) {
         uniform->Allocate(queues, device);
-        for (uint32_t i = 0; i < device.GetNumSwapchainImages(); ++i) {
-          uniform->AddDescriptorSetUpdate(i, descriptorSets_);
-        }
       }
-      descriptorSets_->SubmitUpdates(device);
     }
   }
+
+  void UpdateDescriptorSets(Pipeline const& pipeline, DeviceApi const& device) {
+    descriptorSets_.erase(pipeline.GetId());
+
+    auto descriptorSet = pipeline.CreateDescriptorSets(device);
+    for (auto& uniform : uniforms_) {
+      uniform->AddDescriptorSetUpdate(descriptorSet);
+    }
+    descriptorSet.SubmitUpdates(device);
+
+    descriptorSets_.insert({pipeline.GetId(), std::move(descriptorSet)});
+  }
+
+  void ClearDescriptorSets() { descriptorSets_.clear(); }
+
+  bool IsOutdated() const override { return isOutdated_; };
 
   void Upload(Queues const& queues, DeviceApi& device) override {
     // TODO: maybe check to see if already created and right size
@@ -117,30 +87,31 @@ class VertexBuffer : public Buffer {
   void UploadUniforms(ImageIndex const imageIndex, Queues const& queues,
                       DeviceApi& device) override {
     for (auto& uniform : uniforms_) {
-      // Only allocates and uploads if needed
-      uniform->Allocate(queues, device);
-      uniform->Upload(imageIndex, queues, device);
+      if (uniform && uniform->IsOutdated(imageIndex)) {
+        uniform->Upload(imageIndex, queues, device);
+      }
     }
   }
 
-  void UploadPushConstants(vk::UniquePipelineLayout const& layout,
-                           vk::UniqueCommandBuffer const& cmdBuffer) override {
+  void UploadPushConstants(Pipeline const& pipeline,
+                           vk::CommandBuffer const& cmdBuffer) override {
     for (auto& pushConstant : pushConstants_) {
-      pushConstant->Upload(layout, cmdBuffer);
+      pipeline.UploadPushConstants(pushConstant, cmdBuffer);
     }
+    isOutdated_ = false;
   }
 
-  void Bind(ImageIndex const imageIndex,
-            vk::UniquePipelineLayout const& pipelineLayout,
-            vk::UniqueCommandBuffer const& cmdBuffer) const override {
-    if (deviceBuffer_ && descriptorSets_) {
+  void Bind(ImageIndex const imageIndex, Pipeline const& pipeline,
+            vk::CommandBuffer const& cmdBuffer) const override {
+    if (deviceBuffer_ && descriptorSets_.contains(pipeline.GetId())) {
       deviceBuffer_->BindVertex(cmdBuffer);
-      descriptorSets_->Bind(imageIndex, cmdBuffer, pipelineLayout);
+      pipeline.BindDescriptorSet(
+          imageIndex, descriptorSets_.at(pipeline.GetId()), cmdBuffer);
     }
   }
 
-  virtual void Draw(vk::UniqueCommandBuffer const& cmdBuffer) const override {
-    cmdBuffer->draw(data_.size(), 1, 0, 0);
+  virtual void Draw(vk::CommandBuffer const& cmdBuffer) const override {
+    cmdBuffer.draw(data_.size(), 1, 0, 0);
   }
 
  private:
@@ -148,7 +119,8 @@ class VertexBuffer : public Buffer {
   std::unique_ptr<OptimisedDeviceBuffer> deviceBuffer_;
   std::vector<std::shared_ptr<Uniform>> uniforms_;
   std::vector<std::shared_ptr<PushConstant>> pushConstants_;
-  std::unique_ptr<DescriptorSets> descriptorSets_;
+  std::unordered_map<PipelineId, DescriptorSets> descriptorSets_;
+  bool isOutdated_ = true;
 };
 
 template <class T>
@@ -161,14 +133,12 @@ class IndexBuffer : public Buffer {
     vertexBuffer_.AddUniform(uniform);
   }
 
-  void AddPushConstant(
-      std::shared_ptr<PushConstant> const& pushConstant) override {
+  void AddPushConstant(std::shared_ptr<PushConstant> pushConstant) override {
     vertexBuffer_.AddPushConstant(pushConstant);
   }
 
-  void Initialise(DescriptorSetLayouts& descriptorSetLayouts,
-                  Queues const& queues, DeviceApi& device, bool force) {
-    vertexBuffer_.Initialise(descriptorSetLayouts, queues, device, force);
+  void Allocate(Queues const& queues, DeviceApi& device, bool force) {
+    vertexBuffer_.Allocate(queues, device, force);
     if (force || deviceBuffer_ == nullptr) {
       deviceBuffer_ = std::make_unique<OptimisedDeviceBuffer>(
           indices_.size() * sizeof(uint32_t),
@@ -176,6 +146,14 @@ class IndexBuffer : public Buffer {
       Upload(queues, device);
     }
   }
+
+  void UpdateDescriptorSets(Pipeline const& pipeline, DeviceApi const& device) {
+    vertexBuffer_.UpdateDescriptorSets(pipeline, device);
+  }
+
+  void ClearDescriptorSets() { vertexBuffer_.ClearDescriptorSets(); }
+
+  bool IsOutdated() const override { return vertexBuffer_.IsOutdated(); };
 
   virtual void Upload(Queues const& queues, DeviceApi& device) override {
     vertexBuffer_.Upload(queues, device);
@@ -189,22 +167,21 @@ class IndexBuffer : public Buffer {
     vertexBuffer_.UploadUniforms(imageIndex, queues, device);
   }
 
-  void UploadPushConstants(vk::UniquePipelineLayout const& layout,
-                           vk::UniqueCommandBuffer const& cmdBuffer) override {
-    vertexBuffer_.UploadPushConstants(layout, cmdBuffer);
+  void UploadPushConstants(Pipeline const& pipeline,
+                           vk::CommandBuffer const& cmdBuffer) override {
+    vertexBuffer_.UploadPushConstants(pipeline, cmdBuffer);
   }
 
-  virtual void Bind(ImageIndex const imageIndex,
-                    vk::UniquePipelineLayout const& pipelineLayout,
-                    vk::UniqueCommandBuffer const& cmdBuffer) const override {
-    vertexBuffer_.Bind(imageIndex, pipelineLayout, cmdBuffer);
+  virtual void Bind(ImageIndex const imageIndex, Pipeline const& pipeline,
+                    vk::CommandBuffer const& cmdBuffer) const override {
+    vertexBuffer_.Bind(imageIndex, pipeline, cmdBuffer);
     if (deviceBuffer_) {
       deviceBuffer_->BindIndex(cmdBuffer);
     }
   }
 
-  virtual void Draw(vk::UniqueCommandBuffer const& cmdBuffer) const override {
-    cmdBuffer->drawIndexed(indices_.size(), 1, 0, 0, 0);
+  virtual void Draw(vk::CommandBuffer const& cmdBuffer) const override {
+    cmdBuffer.drawIndexed(indices_.size(), 1, 0, 0, 0);
   }
 
  private:

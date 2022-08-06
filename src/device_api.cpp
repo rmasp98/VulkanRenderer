@@ -5,10 +5,11 @@
 
 namespace vulkan_renderer {
 
-void DeviceApi::RecreateSwapchain(vk::UniqueSurfaceKHR const& surface,
+void DeviceApi::RecreateSwapchain(vk::SurfaceKHR const& surface,
                                   vk::Extent2D& extent,
                                   QueueFamilies const& queueFamilies) {
-  swapchain_ = CreateSwapchain(surface, extent, queueFamilies, swapchain_);
+  swapchain_ =
+      CreateSwapchain(surface, extent, queueFamilies, swapchain_.get());
 }
 
 uint32_t DeviceApi::GetNumSwapchainImages() const {
@@ -38,9 +39,11 @@ ImageIndex DeviceApi::GetNextImageIndex(vk::Semaphore const& semaphore) {
   uint32_t imageIndex;
   auto result = device_->acquireNextImageKHR(swapchain_.get(), UINT64_MAX,
                                              semaphore, nullptr, &imageIndex);
-  if (result != vk::Result::eSuccess) {
+  if (result == vk::Result::eErrorOutOfDateKHR) {
+    throw vk::OutOfDateKHRError("Out of data on get image");
+  } else if (result != vk::Result::eSuccess) {
     // TODO: check for the other possible "successes" like timeout
-    // throw std::exception();
+    throw std::runtime_error("Unhandled error in get image");
   }
   return imageIndex;
 }
@@ -90,10 +93,23 @@ void DeviceApi::ResetFences(std::vector<vk::Fence> const& fences) const {
 }
 
 vk::UniqueCommandPool DeviceApi::CreateCommandPool(
+    vk::CommandPoolCreateFlags const flags,
     uint32_t const graphicsFamilyIndex) const {
-  return device_->createCommandPoolUnique(
-      {vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-       graphicsFamilyIndex});
+  return device_->createCommandPoolUnique({flags, graphicsFamilyIndex});
+}
+
+vk::UniqueCommandBuffer DeviceApi::AllocateCommandBuffer(
+    vk::CommandBufferLevel const bufferLevel) const {
+  return std::move(
+      device_
+          ->allocateCommandBuffersUnique({commandPool_.get(), bufferLevel, 1})
+          .front());
+}
+
+std::vector<vk::CommandBuffer> DeviceApi::AllocateCommandBuffers(
+    vk::CommandBufferLevel const bufferLevel, uint32_t const numBuffers,
+    vk::CommandPool const& pool) const {
+  return device_->allocateCommandBuffers({pool, bufferLevel, numBuffers});
 }
 
 vk::UniqueShaderModule DeviceApi::CreateShaderModule(
@@ -195,38 +211,32 @@ std::vector<Framebuffer> DeviceApi::CreateFramebuffers(
   return framebuffers;
 }
 
-std::vector<vk::UniqueCommandBuffer> DeviceApi::AllocateCommandBuffers(
-    vk::CommandBufferLevel bufferLevel, uint32_t numBuffers) const {
-  return device_->allocateCommandBuffersUnique(
-      {commandPool_.get(), bufferLevel, numBuffers});
-}
-
 vk::UniqueBuffer DeviceApi::CreateBuffer(
     uint32_t const size, vk::BufferUsageFlags const usage) const {
   return device_->createBufferUnique({{}, size, usage});
 }
 
-Allocation DeviceApi::AllocateMemory(vk::UniqueBuffer const& buffer,
+Allocation DeviceApi::AllocateMemory(vk::Buffer const& buffer,
                                      vk::MemoryPropertyFlags const flags) {
-  return allocator_.Allocate(buffer, flags, device_);
+  return allocator_.Allocate(buffer, flags, device_.get());
 }
 
 void DeviceApi::DeallocateMemory(Allocation const& allocation) {
   allocator_.Deallocate(allocation);
 }
 
-void DeviceApi::BindBufferMemory(vk::UniqueBuffer const& buffer,
-                                 vk::UniqueDeviceMemory const& memory,
+void DeviceApi::BindBufferMemory(vk::Buffer const& buffer,
+                                 vk::DeviceMemory const& memory,
                                  vk::DeviceSize const offset) const {
-  device_->bindBufferMemory(buffer.get(), memory.get(), offset);
+  device_->bindBufferMemory(buffer, memory, offset);
 }
 
 void* DeviceApi::MapMemory(Allocation const& allocation) const {
-  return allocator_.MapMemory(allocation, device_);
+  return allocator_.MapMemory(allocation, device_.get());
 }
 
 void DeviceApi::UnmapMemory(Allocation const& allocation) const {
-  allocator_.UnmapMemory(allocation, device_);
+  allocator_.UnmapMemory(allocation, device_.get());
 }
 
 uint64_t DeviceApi::GetMemoryOffset(Allocation const& allocation) const {
@@ -246,19 +256,19 @@ void DeviceApi::UpdateDescriptorSet(
 }
 
 vk::UniqueSwapchainKHR DeviceApi::CreateSwapchain(
-    vk::UniqueSurfaceKHR const& surface, vk::Extent2D& extent,
+    vk::SurfaceKHR const& surface, vk::Extent2D& extent,
     QueueFamilies const& queueFamilies,
-    vk::UniqueSwapchainKHR const& oldSwapchain) const {
-  auto capabilities = physicalDevice_.getSurfaceCapabilitiesKHR(surface.get());
+    vk::SwapchainKHR const& oldSwapchain) const {
+  auto capabilities = physicalDevice_.getSurfaceCapabilitiesKHR(surface);
   extent = SetExtent(extent, capabilities);
   vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eColorAttachment |
                               vk::ImageUsageFlagBits::eTransferSrc;
 
   vk::SwapchainCreateInfoKHR swapChainCreateInfo(
-      {}, surface.get(), SelectImageCount(capabilities), surfaceFormat_.format,
+      {}, surface, SelectImageCount(capabilities), surfaceFormat_.format,
       surfaceFormat_.colorSpace, extent, 1, usage, vk::SharingMode::eExclusive,
       {}, SelectPreTransform(capabilities), SelectCompositeAlpha(capabilities),
-      SelectPresentMode(physicalDevice_, surface), true, oldSwapchain.get());
+      SelectPresentMode(physicalDevice_, surface), true, oldSwapchain);
 
   if (!queueFamilies.IsUniqueFamilies()) {
     auto queueIndices = queueFamilies.UniqueIndices();
@@ -343,8 +353,8 @@ vk::CompositeAlphaFlagBitsKHR SelectCompositeAlpha(
 }
 
 vk::PresentModeKHR SelectPresentMode(vk::PhysicalDevice const& device,
-                                     vk::UniqueSurfaceKHR const& surface) {
-  auto presentModes = device.getSurfacePresentModesKHR(surface.get());
+                                     vk::SurfaceKHR const& surface) {
+  auto presentModes = device.getSurfacePresentModesKHR(surface);
   for (const auto& presentMode : presentModes) {
     if (presentMode == vk::PresentModeKHR::eMailbox) {
       return vk::PresentModeKHR::eMailbox;
@@ -355,4 +365,4 @@ vk::PresentModeKHR SelectPresentMode(vk::PhysicalDevice const& device,
 
 ///////////////////////////////////////////////////////////////////////////
 
-}
+}  // namespace vulkan_renderer

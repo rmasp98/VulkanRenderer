@@ -11,7 +11,7 @@ namespace vulkan_renderer {
 class QueueFamilies {
  public:
   QueueFamilies(vk::PhysicalDevice const& device,
-                vk::UniqueSurfaceKHR const& surface) {
+                vk::SurfaceKHR const& surface) {
     uint32_t familyIndex = 0;
     for (auto const& family : device.getQueueFamilyProperties()) {
       if (graphics_ == -1 &&
@@ -19,8 +19,7 @@ class QueueFamilies {
         graphics_ = familyIndex;
       }
 
-      if (present_ == -1 &&
-          device.getSurfaceSupportKHR(familyIndex, surface.get())) {
+      if (present_ == -1 && device.getSurfaceSupportKHR(familyIndex, surface)) {
         present_ = familyIndex;
       }
 

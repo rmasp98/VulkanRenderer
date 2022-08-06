@@ -25,8 +25,7 @@ class DeviceApi {
  public:
   DeviceApi(vk::PhysicalDevice const& physicalDevice,
             vk::PhysicalDeviceFeatures const* features,
-            QueueFamilies const& queueFamilies,
-            vk::UniqueSurfaceKHR const& surface,
+            QueueFamilies const& queueFamilies, vk::SurfaceKHR const& surface,
             vk::SurfaceFormatKHR const& surfaceFormat, vk::Extent2D& extent)
       : physicalDevice_(physicalDevice),
         device_(CreateVulkanDevice(physicalDevice_,
@@ -34,15 +33,16 @@ class DeviceApi {
                                    features)),
         surfaceFormat_(surfaceFormat),
         swapchain_(CreateSwapchain(surface, extent, queueFamilies, {})),
-        commandPool_(CreateCommandPool(queueFamilies.Graphics())),
+        commandPool_(CreateCommandPool(
+            vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+            queueFamilies.Graphics())),
         descriptorPool_(CreateDescriptorPool()),
         allocator_(physicalDevice_) {}
 
-  void RecreateSwapchain(vk::UniqueSurfaceKHR const& surface,
-                         vk::Extent2D& extent,
+  void RecreateSwapchain(vk::SurfaceKHR const& surface, vk::Extent2D& extent,
                          QueueFamilies const& queueFamilies);
 
-  vk::UniqueSwapchainKHR const& GetSwapchain() { return swapchain_; }
+  vk::SwapchainKHR const& GetSwapchain() { return swapchain_.get(); }
 
   uint32_t GetNumSwapchainImages() const;
   vk::Format GetSurfaceFormat() const { return surfaceFormat_.format; }
@@ -70,7 +70,8 @@ class DeviceApi {
   // Semaphores and fences
   //////////////////////////////////////////////////////////////////////////
 
-  vk::UniqueSemaphore CreateSemaphore(vk::SemaphoreCreateInfo const&) const;
+  vk::UniqueSemaphore CreateSemaphore(
+      vk::SemaphoreCreateInfo const& = {}) const;
   vk::UniqueFence CreateFence(vk::FenceCreateInfo const&) const;
 
   vk::Result WaitForFences(std::vector<vk::Fence> const& fences,
@@ -79,14 +80,28 @@ class DeviceApi {
 
   void ResetFences(std::vector<vk::Fence> const& fences) const;
 
+  void WaitIdle() const { device_->waitIdle(); }
+
   ////////////////////////////////////////////////////////////////////////
-  // Misc
+  // Command Creation
   ////////////////////////////////////////////////////////////////////////
 
   vk::UniqueCommandPool CreateCommandPool(
+      vk::CommandPoolCreateFlags const,
       uint32_t const graphicsFamilyIndex) const;
 
-  void WaitIdle() const { device_->waitIdle(); }
+  void ResetCommandPool(vk::UniqueCommandPool const& pool,
+                        vk::CommandPoolResetFlags const flags = {}) const {
+    device_->resetCommandPool(pool.get(), flags);
+  }
+
+  vk::UniqueCommandBuffer AllocateCommandBuffer(
+      vk::CommandBufferLevel const bufferLevel =
+          vk::CommandBufferLevel::ePrimary) const;
+
+  std::vector<vk::CommandBuffer> AllocateCommandBuffers(
+      vk::CommandBufferLevel const bufferLevel, uint32_t const numBuffers,
+      vk::CommandPool const&) const;
 
   ////////////////////////////////////////////////////////////////////////
   // Shader Creation
@@ -136,13 +151,6 @@ class DeviceApi {
       vk::UniqueRenderPass const& renderPass, vk::Extent2D const& extent) const;
 
   //////////////////////////////////////////////////////////////////////////////
-  // Command Creation
-  //////////////////////////////////////////////////////////////////////////////
-
-  std::vector<vk::UniqueCommandBuffer> AllocateCommandBuffers(
-      vk::CommandBufferLevel bufferLevel, uint32_t numBuffers) const;
-
-  //////////////////////////////////////////////////////////////////////////////
   // Buffer Creation
   //////////////////////////////////////////////////////////////////////////////
 
@@ -157,20 +165,20 @@ class DeviceApi {
   }
 
   vk::MemoryRequirements GetBufferMemoryRequirements(
-      vk::UniqueBuffer const& buffer) const;
+      vk::Buffer const& buffer) const;
 
-  Allocation AllocateMemory(vk::UniqueBuffer const& buffer,
+  Allocation AllocateMemory(vk::Buffer const& buffer,
                             vk::MemoryPropertyFlags const flags);
 
-  Allocation AllocateMemory(vk::UniqueImage const& image,
+  Allocation AllocateMemory(vk::Image const& image,
                             vk::MemoryPropertyFlags const flags) {
-    return allocator_.Allocate(image, flags, device_);
+    return allocator_.Allocate(image, flags, device_.get());
   }
 
   void DeallocateMemory(Allocation const&);
 
-  void BindBufferMemory(vk::UniqueBuffer const& buffer,
-                        vk::UniqueDeviceMemory const& memory,
+  void BindBufferMemory(vk::Buffer const& buffer,
+                        vk::DeviceMemory const& memory,
                         vk::DeviceSize const offset) const;
 
   void* MapMemory(Allocation const&) const;
@@ -210,9 +218,9 @@ class DeviceApi {
   MemoryAllocator allocator_;
 
   vk::UniqueSwapchainKHR CreateSwapchain(
-      vk::UniqueSurfaceKHR const& surface, vk::Extent2D& extent,
+      vk::SurfaceKHR const& surface, vk::Extent2D& extent,
       QueueFamilies const& queueFamilies,
-      vk::UniqueSwapchainKHR const& oldSwapchain) const;
+      vk::SwapchainKHR const& oldSwapchain) const;
 };
 
 vk::Extent2D SetExtent(vk::Extent2D const& windowExtent,
@@ -227,7 +235,7 @@ vk::CompositeAlphaFlagBitsKHR SelectCompositeAlpha(
     vk::SurfaceCapabilitiesKHR const& capabilities);
 
 vk::PresentModeKHR SelectPresentMode(vk::PhysicalDevice const& device,
-                                     vk::UniqueSurfaceKHR const& surface);
+                                     vk::SurfaceKHR const& surface);
 
 }  // namespace vulkan_renderer
 

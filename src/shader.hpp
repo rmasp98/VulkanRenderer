@@ -20,7 +20,7 @@ inline std::vector<char> LoadShader(char const* filename) {
   }
 
   size_t fileSize = (size_t)file.tellg();
-  std::vector<char> buffer(fileSize);
+  std::vector<char> buffer(fileSize / sizeof(char));
 
   file.seekg(0);
   file.read(buffer.data(), fileSize);

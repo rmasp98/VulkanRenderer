@@ -9,9 +9,6 @@ static inline uint32_t const MaxFramesInFlight = 10;
 
 namespace pipeline {  // Graphics Pipeline
 
-static inline vk::PipelineVertexInputStateCreateInfo const VertexInput{
-    {}, nullptr, nullptr};
-
 static inline vk::PipelineInputAssemblyStateCreateInfo const InputAssembly{
     {}, vk::PrimitiveTopology::eTriangleList};
 
@@ -24,7 +21,7 @@ static inline vk::PipelineRasterizationStateCreateInfo const Rasterizer{
     false,
     vk::PolygonMode::eFill,
     vk::CullModeFlagBits::eBack,
-    vk::FrontFace::eCounterClockwise,
+    vk::FrontFace::eClockwise,
     false,
     0.0f,
     0.0f,
@@ -75,7 +72,10 @@ static inline vk::PipelineDynamicStateCreateInfo const DynamicState{
 // Layout
 static inline vk::PipelineLayoutCreateInfo const LayoutCreateInfo{{}, {}};
 
-// RenderPass
+}  // namespace pipeline
+
+namespace render_pass {
+
 static inline vk::AttachmentDescription const ColourAttachment{
     {},
     vk::Format::eUndefined,
@@ -133,7 +133,7 @@ static inline vk::SubpassDependency const Dependency{
     vk::AccessFlagBits::eColorAttachmentWrite |
         vk::AccessFlagBits::eDepthStencilAttachmentWrite};
 
-}  // namespace pipeline
+}  // namespace render_pass
 
 namespace framebuffer {
 
